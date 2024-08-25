@@ -12,35 +12,39 @@ namespace zettelkanvas
         [JsonPropertyName("id")]
         public string Id {  get; set; }
         [JsonPropertyName("fromNode")]
-        public string fromNode { get; set; }
+        public string FromNode { get; set; }
         [JsonPropertyName("fromSide")]
-        public string fromSide { get; set; }
+        public string FromSide { get; set; }
         [JsonPropertyName("toNode")]
-        public string toNode { get; set; }
+        public string ToNode { get; set; }
         [JsonPropertyName("toSide")]
-        public string toSide { get; set; }
+        public string ToSide { get; set; }
+        [JsonIgnore]
+        public bool DisplayArrow { get; set; } = true;
+        [JsonPropertyName("toEnd")]
+        public string? ToEnd { get { return (DisplayArrow) ? null : "none"; } } 
+        
 
-        public Edge(string fromNode, string toNode, string fromSide = "right")
+        public Edge(string sourcePosition, string fromSide, string destinationPosition, string toSide)
         {
-            this.Id = fromNode + "to" + toNode;
-            this.fromNode = fromNode;
-            this.fromSide = fromSide;
-            this.toNode = toNode;
-            this.toSide = "left";
+            this.Id = sourcePosition + "to" + destinationPosition;
+            this.FromNode = sourcePosition;
+            this.FromSide = fromSide;
+            this.ToNode = destinationPosition;
+            this.ToSide = toSide;
         }
-        public Edge(Node fromNode, Node toNode)
+        public static Edge TreeLink(string parentNodePosition, string nextOrBranchPosition)
         {
-            Id = fromNode.Position + "to" + toNode.Position;
-            this.fromNode = fromNode.Position;
-            this.fromSide = GetFromSide(fromNode, toNode);
-            this.toNode = toNode.Position;
-            this.toSide = "left";
+            return new Edge(parentNodePosition, "right", nextOrBranchPosition, "left");
+        }
+        public static Edge OuterLink(Node fromNode, Node toNode)
+        {
+            string fromSide = (fromNode.Y <= toNode.Y) ? "bottom" : "top";
+            string toSide = (fromNode.Y < toNode.Y) ? "top" : "bottom";
 
-        }
-        private static string GetFromSide(Node start, Node end)
-        {
-            if (start.Y >= end.Y) { return "top"; }
-            return "bottom";
-        }
+            var edge = new Edge(fromNode.Position, fromSide, toNode.Position, toSide);
+            edge.DisplayArrow = false;
+            return edge;
+        }        
     }
 }

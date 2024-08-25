@@ -1,5 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Xml.Linq;
 
 namespace zettelkanvas
 {
@@ -10,7 +12,7 @@ namespace zettelkanvas
         public static FileStream OutputFileStream { get; private set; }
         public static string BasePathForNode { get; private set; }
 
-        public static Dictionary<string, Node> PositionToNode { get; } = new Dictionary<string, Node>();
+        public static Dictionary<string, Node> NameToNode { get; } = new Dictionary<string, Node>();
         public static Canvas Canvas { get; } = new Canvas();
 
         public static bool ReadAndValidateArgs(string[] args)
@@ -49,6 +51,81 @@ namespace zettelkanvas
             
             return true;
         } 
+        public static void GetAndSortNodes(string pathToDir)
+        {
+            foreach (string filePath in Directory.GetFiles(pathToDir))
+            {
+                try
+                {
+                    var node = new Node(filePath);
+                    Canvas.Nodes.Add(node);
+                    NameToNode.Add(node.NoteName, node);
+                }
+                catch
+                {
+
+                }
+            }
+            Canvas.Nodes.Sort();
+        }
+        public static List<Node> BuildTrees()
+        {
+            List<Node> rootNodes = new List<Node> ();
+            var mainlineNode = Canvas.Nodes[0];
+            rootNodes.Add(mainlineNode);
+            var currentNode = mainlineNode;
+            int i = 1;
+            while (i < Canvas.Nodes.Count)
+            {
+                var node = Canvas.Nodes[i];
+                if (node.IsRoot)
+                {
+                    mainlineNode = node;
+                    currentNode = node;
+                    rootNodes.Add(node);
+                    i++;
+                    continue;
+                }
+                while (true)
+                {
+                    if (node.PositionData.NameParts[0].Branch == "")
+                    {
+                        mainlineNode.SetNext(node);
+                        mainlineNode = node;
+                        break;
+                    }
+                    if (PositionData.IsBranchBase(currentNode.PositionData, node.PositionData))
+                    {
+                        currentNode.AddBranch(node);
+                        break;
+                    }
+                    if (PositionData.IsSuitableNext(currentNode.PositionData, node.PositionData))
+                    {
+                        currentNode.SetNext(node);
+                        break;
+                    }
+                    if (currentNode == mainlineNode)
+                    {
+                        mainlineNode.SetNext(node);
+                        mainlineNode = node;
+                        break;
+                    }
+                    currentNode = currentNode.Parent;
+                }
+                currentNode = node;
+                i++;
+            }
+            return rootNodes;
+        }
+        public static void ArrangeTrees(List<Node> rootNodes)
+        {
+            rootNodes[0].Arrange(out int l, out int h);
+            for (int i = 1; i < rootNodes.Count; i++)
+            {
+                rootNodes[i].MoveFromNode(rootNodes[i - 1], 0, h);
+                rootNodes[i].Arrange(out l, out h);
+            }
+        }
 
         static void Main(string[] args)
         {
@@ -60,27 +137,15 @@ namespace zettelkanvas
 #endif
             if (!ReadAndValidateArgs(args)) return;
 
-            var nodes = new List<Node>();
-            foreach (string filePath in Directory.GetFiles(PathToTargetDir)) {
-                try
-                {
-                    var node = new Node(filePath);
-                    nodes.Add(node);
-                    PositionToNode.Add(node.Position, node);
-                }
-                catch
-                {
+            GetAndSortNodes(PathToTargetDir);
 
-                }
-            }
-            nodes.Sort();
+            List<Node> rootNodes = BuildTrees();
 
-            var baseNode = Node.SetLinkedNodes(nodes);
-            baseNode.Arrange(out int a, out int b);
-            Canvas.nodes = nodes; 
+            ArrangeTrees(rootNodes);
 
-            Canvas.PrepareToSerialization();
-            var jsonOfCanvas = JsonSerializer.Serialize(Canvas, new JsonSerializerOptions { WriteIndented = true });
+
+            Canvas.Prepare();
+            var jsonOfCanvas = JsonSerializer.Serialize(Canvas, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
             var bytesOfCanvas = Encoding.ASCII.GetBytes(jsonOfCanvas);
             OutputFileStream.Write(bytesOfCanvas);
             OutputFileStream.Dispose();

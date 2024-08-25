@@ -1,5 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using static System.Net.Mime.MediaTypeNames;
 
 
 namespace zettelkanvas
@@ -11,10 +12,10 @@ namespace zettelkanvas
         
         [JsonIgnore]
         public string NoteName { get; private set; }
-        
+
         [JsonIgnore]
-        public List<string>? LinkedNodePostions { get; private set; }
-        
+        public string PathToNote {  get; private set; }
+
         [JsonIgnore]
         public Node? Parent { get; private set; }
         
@@ -30,11 +31,14 @@ namespace zettelkanvas
         [JsonPropertyName("file")]
         public string FormattedFilePath { get; private set; }
         
-        [JsonPropertyName("x")]
-        public int X { get; set; }
-        
-        [JsonPropertyName("y")]
+        [JsonIgnore]
+        public int X { get; set; }        
+        [JsonIgnore]
         public int Y { get; set; }
+        [JsonPropertyName("x")]
+        public int OutputX { get { return X * 600; } }
+        [JsonPropertyName("y")]
+        public int OutputY { get { return Y * 600; } }
 
         [JsonPropertyName("type")]
         public string Type { get { return "file"; } }
@@ -45,38 +49,37 @@ namespace zettelkanvas
         [JsonPropertyName("height")]
         public int Height { get { return 400; } }
 
-        private static int PathLength = Program.PathToTargetDir.Length;
-        private static Regex PositionRegex = new Regex(@"\d+[a-z\d]*\b", RegexOptions.Compiled);
+        [JsonIgnore]
+        public bool IsRoot { get; private set; }
+
+        public static int PathLength = Program.PathToTargetDir.Length;
+        public static Regex PositionRegex = new Regex(@"\d+[a-z\d]*\b", RegexOptions.Compiled);
         public Node(string filePath) {
             if (!filePath.EndsWith(".md")) throw new Exception("Unsuitable file format");
-            
+
+            PathToNote = filePath;
             NoteName = filePath.Substring(PathLength + 1, filePath.Length - PathLength - 4);
             FormattedFilePath = Program.BasePathForNode + NoteName + ".md";
             var match = PositionRegex.Match(NoteName);
             if (!match.Success) { throw new Exception("Filename does not contain zettelkasten position"); }
             Position = match.Value;
             PositionData = new PositionData(Position);
+
+            var Text = File.ReadAllText(filePath);
+            IsRoot = Text.Contains("%%ZK:\\n%%");
+
             X = 0;
             Y = 0;
             Branches = new List<Node>();
-        }
-        private static Regex linkRegex = new Regex(@"\[\[(\d|[a-z])+(\|(.)*)*\]\]", RegexOptions.Compiled);
-        private static Regex getLinkedFileName = new Regex(@"(\d|[a-z])+", RegexOptions.Compiled);
-        private static List<string> GetLinksFromFile(string path)
-        {
-            var res = new List<string>();
-            using (var fileInput = new StreamReader(path))
-            {
-                string text = fileInput.ReadToEnd();
-                foreach (Match match in linkRegex.Matches(text))
-                {
-                    string processedMatch = getLinkedFileName.Match(match.Value).Value;
-                    res.Add(processedMatch);
-                }
-            }
-            return res;
-        }
 
+#if DEBUG
+            if (NoteName == "3a1")
+            {
+                ProcessLinks(out var str, out var links);
+            }
+#endif
+        }
+        
         public void RemoveNext()
         {
             if (Next is null) return;
@@ -125,87 +128,69 @@ namespace zettelkanvas
                 Next.Arrange(out lengthBuf, out heightBuf);
                 length += lengthBuf; height = int.Max(height, heightBuf);
             }
-        }
-        /*
-        public void AddToMap(Canvas map, Dictionary<string, Node> nameToNode)
-        {
-            map.nodes.Add(Node);
-
-            Node fromNode;
-            foreach (string link in Node.LinkedNodePostions)
-            {
-                if (link == Node.Position) continue;
-                if (Parent is not null && link == Parent.Node.Position)
-                {
-                    map.edges.Add(new Edge(link, Node.Position));
-                    continue;
-                }
-
-                if (nameToNode.TryGetValue(link, out fromNode))
-                {
-                    map.edges.Add(new Edge(fromNode, Node));
-                }
-            }
-
-            foreach (var branch in Branches)
-            {
-                branch.AddToMap(map, nameToNode);
-            }
-            if (Next is not null)
-            {
-                Next.AddToMap(map, nameToNode);
-            }
-        }
-        */
-        public static Node SetLinkedNodes(List<Node> sortedNodes)
-        {
-            var baseNode = sortedNodes[0]   ;
-            var currentRoot = baseNode;
-            var currentNode = currentRoot;
-            int i = 1;
-            while (i < sortedNodes.Count)
-            {
-                var node = sortedNodes[i];
-
-                while (true)
-                {
-                    if (node.PositionData.NameParts[0].Branch == "")
-                    {
-                        currentRoot.SetNext(node);
-                        currentRoot = node;
-                        break;
-                    }
-                    if (PositionData.IsBranchBase(currentNode.PositionData, node.PositionData))
-                    {
-                        currentNode.AddBranch(node);
-                        break;
-                    }
-                    if (PositionData.IsSuitableNext(currentNode.PositionData, node.PositionData))
-                    {
-                        currentNode.SetNext(node);
-                        break;
-                    }
-                    if (currentNode == currentRoot)
-                    {
-                        currentRoot.SetNext(node);
-                        currentRoot = node;
-                        break;
-                    }
-                    currentNode = currentNode.Parent;
-                }
-
-                currentNode = node;
-                i++;
-            }
-            return baseNode;
-        }
-
+        }        
         public int CompareTo(Node? other)
         {
             if (other is null) return 1;
             var res = PositionData.CompareTo(other.PositionData);
             return res;
         }
-    }
 
+        public static Regex LinkRegex = new Regex(@"\[\[(\d|[a-zA-Z])+[\w\s]*(\|(.)*)*\]\]", RegexOptions.Compiled);
+        public static Regex noteNameFromLinkRegex = new Regex(@"(\d|[a-zA-Z])+[\w\s]*", RegexOptions.Compiled);
+        public static Regex LinkCommentaryRegex = new Regex(@"(`|\|).+(`|\]\])", RegexOptions.Compiled);
+
+        public void ProcessLinks(out string noteText, out Dictionary<string, LinkData> links )
+        {
+            string fullText = File.ReadAllText(PathToNote);
+            links = new Dictionary<string, LinkData>();
+            var split = fullText.Split("%%ZK:links%%");
+            noteText = split[0];
+            if (!noteText.EndsWith("\n")) noteText += "\n";
+            noteText += "%%ZK:links%%\n***\n";
+
+            if (split.Length > 1)
+            {
+                foreach (var line in split[1].Split("\n")) {
+                    var matchLink = LinkRegex.Match(line);
+                    if (!matchLink.Success) continue;
+                    string linkText = noteNameFromLinkRegex.Match(matchLink.Value).Value.Trim();
+
+                    var matchComm = LinkCommentaryRegex.Match(line);
+                    var link = new LinkData(linkText, (matchComm.Success) ? matchComm.Value.Substring(1, matchComm.Value.Length-2) : "-");
+
+                    links.Add(link.LinkText, link);
+                }
+            }
+
+            foreach (Match match in LinkRegex.Matches(noteText))
+            {
+                string linkText = noteNameFromLinkRegex.Match(match.Value).Value.Trim();
+                var autoCommentMatch = LinkCommentaryRegex.Match(match.Value);
+                string? autoComment = null;
+                if (autoCommentMatch.Success)
+                {
+                    autoComment = autoCommentMatch.Value;
+                    autoComment = autoComment.Substring(1, autoComment.Length - 3);
+                }
+                if (!links.ContainsKey(linkText))
+                    links.Add(linkText, new LinkData(linkText, (autoComment is not null) ? autoComment : "?"));
+            }
+
+            static void TryAdd(string linkText, Dictionary<string, LinkData> links)
+            {
+                if (!links.ContainsKey(linkText))
+                    links.Add(linkText, new LinkData(linkText));
+            }
+
+            if (Parent is not null)
+                TryAdd(Parent.NoteName, links);
+            if (Next is not null)
+                TryAdd(Next.NoteName, links);
+            foreach(var branch in Branches)
+            {
+                TryAdd(branch.NoteName, links);
+            }
+        }
+    }
 }
