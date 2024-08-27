@@ -7,56 +7,28 @@ using System.Threading.Tasks;
 
 namespace zettelkanvas
 {
-    public class PositionData : IComparable<PositionData>
+    internal class IdData : IComparable<IdData>
     {
-        public struct Element : IComparable<Element>
+        public List<IdElement> NameParts { get; private set; }
+
+        public IdData(string noteId)
         {
-            public int Number { get; private set; }
-            public string Branch { get; private set; }
-
-            public static Regex ElementRegex = new Regex(@"\d+|[a-z]+", RegexOptions.Compiled);
-            public Element(string nodeNameElement)
+            NameParts = new List<IdElement>();
+            foreach (Match match in Regexes.IdElement().Matches(noteId))
             {
-                MatchCollection parts = ElementRegex.Matches(nodeNameElement);
-                Number = int.Parse(parts[0].Value);
-                Branch = "";
-                if (parts.Count > 1)
-                    Branch = parts[1].Value;
-            }
-            public int CompareTo(Element other)
-            {
-                if (Number < other.Number) return -1;
-                if (Number > other.Number) { return 1; }
-
-                return String.Compare(Branch, other.Branch, StringComparison.InvariantCulture);
-            }
-            public override string ToString()
-            {
-                return $"{Number}:\"{Branch}\"";
-            }
-        }
-        public List<Element> NameParts { get; private set; }
-
-        private static Regex NamePartRegex = new Regex(@"\d+[a-z]*", RegexOptions.Compiled);
-
-        public PositionData(string position)
-        {
-            NameParts = new List<Element>();
-            foreach (Match match in NamePartRegex.Matches(position))
-            {
-                NameParts.Add(new Element(match.Value));
+                NameParts.Add(new IdElement(match.Value));
             }
         }
         public override string ToString()
         {
             var res = $"";
-            foreach (Element e in NameParts)
+            foreach (IdElement e in NameParts)
             {
                 res += $"{e} ";
             }
             return res;
         }
-        public int CompareTo(PositionData? other)
+        public int CompareTo(IdData? other)
         {
             if (other == null) return 1;
 
@@ -69,7 +41,7 @@ namespace zettelkanvas
             return -1;
         }
 
-        public static bool IsBranchBase(PositionData branchBase, PositionData branch)
+        public static bool IsBranchBase(IdData branchBase, IdData branch)
         {
             if (branchBase.NameParts.Count != branch.NameParts.Count) return false;
             int i = 0;
@@ -81,7 +53,7 @@ namespace zettelkanvas
             if (branchBase.NameParts[i].Number == branch.NameParts[i].Number && (branchBase.NameParts[i].Branch == "" || branch.NameParts[i].Branch.Contains(branchBase.NameParts[i].Branch))) return true;
             return false;
         }
-        public static bool IsSuitableNext(PositionData baseNode, PositionData nextNode)
+        public static bool IsSuitableNext(IdData baseNode, IdData nextNode)
         {
             if (nextNode.NameParts.Count - baseNode.NameParts.Count > 1) return false;
             int i = 0;

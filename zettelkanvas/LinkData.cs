@@ -17,21 +17,24 @@ namespace zettelkanvas
         }
         private static string[] Symbols = ["$<$", "$>$", "$\\vdash$", "$\\odot$"];
 
-        public string LinkText { get; private set; }
-        public string LinkCommentary { get; private set; }
+        /// <summary>
+        /// Link text, including alias
+        /// </summary>
+        public string LinkText { get; private set; } 
+        public string LinkComment { get; private set; }
 
-        public LinkData(string linkText, string linkCommentary = "-") {
+        public LinkData(string linkText, string linkComment = "-") {
             LinkText = linkText;
-            LinkCommentary = linkCommentary;
+            LinkComment = linkComment;
         }
 
         public string Print(TypeSymbol type)
         {
-            return $"{Symbols[(int)type]} [[{LinkText}]]: `{LinkCommentary}`\n";
+            return $"{Symbols[(int)type]} [[{LinkText}]]: `{LinkComment}`";
         }
         public override string ToString()
         {
-            return $"[[{LinkText}]]: `{LinkCommentary}`\n";
+            return $"[[{LinkText}]]: `{LinkComment}`\n";
         }
     }
 }

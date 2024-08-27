@@ -1,105 +1,67 @@
 ﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Xml.Linq;
+using System.Text.RegularExpressions;
 
 namespace zettelkanvas
 {
     internal static class Program
     {
-        public static string PathToTargetDir { get; private set; }
-        public static FileInfo OutputFile { get; private set; } 
-        public static FileStream OutputFileStream { get; private set; }
-        public static string BasePathForNode { get; private set; }
-
-        public static Dictionary<string, Node> NameToNode { get; } = new Dictionary<string, Node>();
-        public static Canvas Canvas { get; } = new Canvas();
-
-        public static bool ReadAndValidateArgs(string[] args)
+        private static List<Node> GetNodesFromDir(string dirRelativePath, out Dictionary<string, Node> idToNode)
         {
-            if (args.Length != 2) { 
-                Console.Error.WriteLine(
-                    "2 arguments required:\n" +
-                    "1) relative path from vault root to zettelkasten directory\n" +
-                    "2) relative path from vault root to output file (without .canvas format!)\n"
-                );
-                return false;
-            }
-
-            var currentDir = Directory.GetCurrentDirectory();
+            List<Node> nodes = [];
+            idToNode = [];
+            int pathLength = dirRelativePath.Length;
             
-            PathToTargetDir = Path.Combine(currentDir, args[0]);
-            if (!Directory.Exists(PathToTargetDir))
+            foreach (string filePath in Directory.GetFiles(dirRelativePath))
             {
-                Console.Error.WriteLine($"Unable to locate directory {PathToTargetDir}");
-                return false;
-            }
+                if (!filePath.EndsWith(".md")) continue;
+                string noteName = filePath.Substring(pathLength + 1, filePath.Length - pathLength - 4);
+                Match idMatch = Regexes.IdRegex().Match(noteName);
+                if (!idMatch.Success) continue;
+                string id = idMatch.Value;
+                if (idToNode.ContainsKey(id)) continue;
 
-            BasePathForNode = Path.GetRelativePath(currentDir, PathToTargetDir).Replace("\\", "/") + "/";
+                Node newNode = new(filePath, id, noteName);
 
-            string pathToOutPutFile = Path.Combine(currentDir, args[1] + ".canvas");
-            try
-            {
-                OutputFile = new FileInfo(pathToOutPutFile);
-                OutputFileStream = OutputFile.OpenWrite();
-                OutputFileStream.Write(Encoding.ASCII.GetBytes("\n"));
+                nodes.Add(newNode);
+                idToNode.Add(id, newNode);
             }
-            catch (Exception ex) {
-                Console.Error.WriteLine (ex.ToString());
-                return false;
-            }   
             
-            return true;
-        } 
-        public static void GetAndSortNodes(string pathToDir)
-        {
-            foreach (string filePath in Directory.GetFiles(pathToDir))
-            {
-                try
-                {
-                    var node = new Node(filePath);
-                    Canvas.Nodes.Add(node);
-                    NameToNode.Add(node.NoteName, node);
-                }
-                catch
-                {
-
-                }
-            }
-            Canvas.Nodes.Sort();
+            return nodes;
         }
-        public static List<Node> BuildTrees()
-        {
-            List<Node> rootNodes = new List<Node> ();
-            var mainlineNode = Canvas.Nodes[0];
-            rootNodes.Add(mainlineNode);
-            var currentNode = mainlineNode;
-            int i = 1;
-            while (i < Canvas.Nodes.Count)
+        private static List<Node> BuildTrees(List<Node> nodes) {
+            List<Node> rootNodes = [];
+            nodes.Sort();
+            Node? mainlineNode = nodes[0], currentNode = nodes[0];
+
+            for (int i = 0; i < nodes.Count; i++)
             {
-                var node = Canvas.Nodes[i];
-                if (node.IsRoot)
+                var node = nodes[i];
+                if (i == 0 || node.IsRoot)
                 {
+                    rootNodes.Add(node);
                     mainlineNode = node;
                     currentNode = node;
-                    rootNodes.Add(node);
-                    i++;
                     continue;
                 }
                 while (true)
                 {
-                    if (node.PositionData.NameParts[0].Branch == "")
+                    if (node.IdData.NameParts[0].Branch == "")
                     {
                         mainlineNode.SetNext(node);
                         mainlineNode = node;
                         break;
                     }
-                    if (PositionData.IsBranchBase(currentNode.PositionData, node.PositionData))
+#pragma warning disable CS8602
+                    if (IdData.IsBranchBase(currentNode.IdData, node.IdData))
+#pragma warning restore CS8602
                     {
                         currentNode.AddBranch(node);
                         break;
                     }
-                    if (PositionData.IsSuitableNext(currentNode.PositionData, node.PositionData))
+
+                    if (IdData.IsSuitableNext(currentNode.IdData, node.IdData))
                     {
                         currentNode.SetNext(node);
                         break;
@@ -113,18 +75,9 @@ namespace zettelkanvas
                     currentNode = currentNode.Parent;
                 }
                 currentNode = node;
-                i++;
             }
+
             return rootNodes;
-        }
-        public static void ArrangeTrees(List<Node> rootNodes)
-        {
-            rootNodes[0].Arrange(out int l, out int h);
-            for (int i = 1; i < rootNodes.Count; i++)
-            {
-                rootNodes[i].MoveFromNode(rootNodes[i - 1], 0, h);
-                rootNodes[i].Arrange(out l, out h);
-            }
         }
 
         static void Main(string[] args)
@@ -135,20 +88,43 @@ namespace zettelkanvas
                 "testdir\\zettelkanvas"
             ];
 #endif
-            if (!ReadAndValidateArgs(args)) return;
+            Parameters parameters;
+            try
+            {
+                parameters = new(args);
+                Node.Parameters = parameters;
+            } catch
+            {
+                Console.WriteLine("Programm execution interrupted");
+                return;
+            }
 
-            GetAndSortNodes(PathToTargetDir);
+            List<Node> nodeList = GetNodesFromDir(parameters.TargetDirPath, out Dictionary<string, Node> idToNode);
+            
+            List<Node> rootNodes = BuildTrees(nodeList);
 
-            List<Node> rootNodes = BuildTrees();
+            foreach (var node in nodeList) 
+            {
+                node.TryAddLinksToConnectedNodes();
+            }
 
-            ArrangeTrees(rootNodes);
+            rootNodes[0].Arrange(out int length, out int height);
+            for (int i = 1; i < rootNodes.Count; i++)
+            {
+                rootNodes[i].MoveFromNode(rootNodes[i - 1], 0, height);
+                rootNodes[i].Arrange(out length, out height);
+            }
 
+            var Canvas = new Canvas(nodeList, idToNode);
 
-            Canvas.Prepare();
-            var jsonOfCanvas = JsonSerializer.Serialize(Canvas, new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
-            var bytesOfCanvas = Encoding.ASCII.GetBytes(jsonOfCanvas);
-            OutputFileStream.Write(bytesOfCanvas);
-            OutputFileStream.Dispose();
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+            var canvasJson = JsonSerializer.Serialize(Canvas, jsonOptions);
+            
+            File.WriteAllBytes(
+                parameters.OutputFilePath,
+                Encoding.UTF8.GetBytes(canvasJson)
+            );
+            Console.WriteLine("Zettelkanvas finished work sucessfully");
         }
     }
 }

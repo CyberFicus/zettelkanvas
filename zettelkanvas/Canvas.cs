@@ -14,59 +14,47 @@ namespace zettelkanvas
         [JsonPropertyName("edges")]
         public List<Edge> Edges { get; set; }
 
-        public Canvas() { 
-            Nodes = new List<Node>();
-            Edges = new List<Edge>();
-        }
+        public Canvas(List<Node> nodes, Dictionary<string, Node> idToNode) {
+            Nodes = nodes;
+            Edges = [];
 
-        public void Prepare()
-        {
-            foreach(var node in Nodes)
+            foreach (var node in Nodes)
             {
-                node.ProcessLinks(out string noteText, out Dictionary<string, LinkData> links);
+                List<string> linkSection = [];
 
-                bool Retrieve(string noteName, Dictionary<string, LinkData> links, out LinkData linkData)
+                LinkData? link;
+                if (node.Parent is not null)
                 {
-                    if (links.TryGetValue(noteName, out linkData))
-                    {
-                        links.Remove(noteName);
-                    }
-                    return false;
-                }
-
-                LinkData link;
-                if (node.Parent is not null) {
-                    Retrieve(node.Parent.NoteName, links, out link);
-                    noteText += link.Print(LinkData.TypeSymbol.PrevLink);
+                    Edges.Add(Edge.TreeLink(node.Parent.Id, node.Id));
+                    link = node.RetrieveLink(node.Parent.Id);
+                    linkSection.Add(link.Print(LinkData.TypeSymbol.PrevLink));
                 }
                 if (node.Next is not null)
                 {
-                    Edges.Add(Edge.TreeLink(node.Position, node.Next.Position));
-                    Retrieve(node.Next.NoteName, links, out link);
-                    noteText += link.Print(LinkData.TypeSymbol.NextLink);
+                    link = node.RetrieveLink(node.Next.Id);
+                    linkSection.Add(link.Print(LinkData.TypeSymbol.NextLink));
                 }
-                foreach(var branch in node.Branches)
+                foreach (var branch in node.Branches)
                 {
-                    Edges.Add(Edge.TreeLink(node.Position, branch.Position));
-                    Retrieve(branch.NoteName, links, out link);
-                    noteText += link.Print(LinkData.TypeSymbol.BranchLink);
-                }
-                var outerLinks = new List<Node>();
-                foreach (string noteName in links.Keys)
-                {
-                    Program.NameToNode.TryGetValue(noteName, out var nodeForList);
-                    if (nodeForList is null) continue;
-                    outerLinks.Add(nodeForList);
-                }
-                outerLinks.Sort();
-                foreach(var listNode in outerLinks)
-                {
-                    Edges.Add(Edge.OuterLink(listNode, node));
-                    Retrieve(listNode.NoteName, links, out link);
-                    noteText += link.Print(LinkData.TypeSymbol.OuterLink);
+                    link = node.RetrieveLink(branch.Id);
+                    linkSection.Add(link.Print(LinkData.TypeSymbol.BranchLink));
                 }
 
-                File.WriteAllText(node.PathToNote, noteText);
+                var outerLinks = new List<Node>();
+                foreach (string nodeId in node.Links.Keys)
+                {
+                    idToNode.TryGetValue(nodeId, out var newNode);
+                    outerLinks.Add(newNode);
+                }
+                outerLinks.Sort();
+                foreach (var listNode in outerLinks)
+                {
+                    Edges.Add(Edge.OuterLink(node, listNode));
+                    link = node.RetrieveLink(listNode.Id);
+                    linkSection.Add(link.Print(LinkData.TypeSymbol.OuterLink));
+                }
+
+                File.AppendAllLines(node.NotePath, linkSection);
             }
         }
     }

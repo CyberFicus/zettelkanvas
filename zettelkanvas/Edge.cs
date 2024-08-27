@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
+﻿using System.Text.Json.Serialization;
 
 namespace zettelkanvas
 {
@@ -24,25 +19,24 @@ namespace zettelkanvas
         [JsonPropertyName("toEnd")]
         public string? ToEnd { get { return (DisplayArrow) ? null : "none"; } } 
         
-
-        public Edge(string sourcePosition, string fromSide, string destinationPosition, string toSide)
+        public Edge(string fromNode, string fromSide, string toNode, string toSide)
         {
-            this.Id = sourcePosition + "to" + destinationPosition;
-            this.FromNode = sourcePosition;
+            this.Id = fromNode + "to" + toNode;
+            this.FromNode = fromNode;
             this.FromSide = fromSide;
-            this.ToNode = destinationPosition;
+            this.ToNode = toNode;
             this.ToSide = toSide;
         }
-        public static Edge TreeLink(string parentNodePosition, string nextOrBranchPosition)
+        public static Edge TreeLink(string fromNodeId, string toNodeId)
         {
-            return new Edge(parentNodePosition, "right", nextOrBranchPosition, "left");
+            return new Edge(fromNodeId, "right", toNodeId, "left");
         }
         public static Edge OuterLink(Node fromNode, Node toNode)
         {
             string fromSide = (fromNode.Y <= toNode.Y) ? "bottom" : "top";
             string toSide = (fromNode.Y < toNode.Y) ? "top" : "bottom";
 
-            var edge = new Edge(fromNode.Position, fromSide, toNode.Position, toSide);
+            var edge = new Edge(fromNode.Id, fromSide, toNode.Id, toSide);
             edge.DisplayArrow = false;
             return edge;
         }        

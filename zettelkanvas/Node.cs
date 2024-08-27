@@ -1,42 +1,22 @@
 ﻿using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using static System.Net.Mime.MediaTypeNames;
-
 
 namespace zettelkanvas
 {
     internal class Node : IComparable<Node>
     {
         [JsonIgnore]
-        public PositionData PositionData { get; set; }
-        
-        [JsonIgnore]
-        public string NoteName { get; private set; }
-
-        [JsonIgnore]
-        public string PathToNote {  get; private set; }
-
-        [JsonIgnore]
-        public Node? Parent { get; private set; }
-        
-        [JsonIgnore]
-        public Node? Next { get; private set; }
-        
-        [JsonIgnore]
-        public List<Node> Branches { get;}
+        public static Parameters? Parameters { get; set; } = null;
 
         [JsonPropertyName("id")]
-        public string Position { get; private set; }
-        
+        public string Id { get; private set; }
+
         [JsonPropertyName("file")]
-        public string FormattedFilePath { get; private set; }
-        
-        [JsonIgnore]
-        public int X { get; set; }        
-        [JsonIgnore]
-        public int Y { get; set; }
+        public string FileProperty { get; private set; }
+
         [JsonPropertyName("x")]
         public int OutputX { get { return X * 600; } }
+        
         [JsonPropertyName("y")]
         public int OutputY { get { return Y * 600; } }
 
@@ -50,36 +30,182 @@ namespace zettelkanvas
         public int Height { get { return 400; } }
 
         [JsonIgnore]
-        public bool IsRoot { get; private set; }
+        public string NotePath { get; private set; }
+        [JsonIgnore]
+        public IdData IdData { get; set; }
+        [JsonIgnore]
+        public string NoteName { get; private set; }
+        /// <summary>
+        /// Node id -> link
+        /// </summary>
+        [JsonIgnore]
+        public Dictionary<string, LinkData> Links;
+        [JsonIgnore]
+        public bool IsRoot { get; private set; } = false;
+        [JsonIgnore]
+        public int X { get; set; } = 0;
+        [JsonIgnore]
+        public int Y { get; set; } = 0;
 
-        public static int PathLength = Program.PathToTargetDir.Length;
-        public static Regex PositionRegex = new Regex(@"\d+[a-z\d]*\b", RegexOptions.Compiled);
-        public Node(string filePath) {
-            if (!filePath.EndsWith(".md")) throw new Exception("Unsuitable file format");
+        [JsonIgnore]
+        public Node? Parent { get; private set; }
+        [JsonIgnore]
+        public Node? Next { get; private set; }
+        [JsonIgnore]
+        public List<Node> Branches { get;} = new List<Node>();
 
-            PathToNote = filePath;
-            NoteName = filePath.Substring(PathLength + 1, filePath.Length - PathLength - 4);
-            FormattedFilePath = Program.BasePathForNode + NoteName + ".md";
-            var match = PositionRegex.Match(NoteName);
-            if (!match.Success) { throw new Exception("Filename does not contain zettelkasten position"); }
-            Position = match.Value;
-            PositionData = new PositionData(Position);
+        public Node(string notePath, string id, string noteName)
+        {
+            NotePath = notePath;
+            Id = id;
+            IdData = new(id);
+            NoteName = noteName;
+#pragma warning disable CS8602
+            FileProperty = Parameters.FilePropertyBase + NoteName + ".md";
+#pragma warning restore CS8602
 
-            var Text = File.ReadAllText(filePath);
-            IsRoot = Text.Contains("%%ZK:\\n%%");
-
-            X = 0;
-            Y = 0;
-            Branches = new List<Node>();
-
-#if DEBUG
-            if (NoteName == "3a1")
+            List<string> noteText = [];
+            Links = new Dictionary<string, LinkData>();
+            bool linkSectionStarted = false;
+            foreach (string line in File.ReadLines(notePath))
             {
-                ProcessLinks(out var str, out var links);
+                if (!linkSectionStarted)
+                {
+                    if (!IsRoot && line.Contains("%%ZK:\\n%%")) IsRoot = true;
+
+                    string noteLine = line;
+
+                    string[] split = line.Split("%%ZK:links%%");
+                    if (split.Length > 1)
+                    {
+                        noteLine = split[0];
+                        TryAddFirstLink(split[1]);
+                        
+                        noteLine += "%%ZK:links%%\n***";
+
+                        linkSectionStarted = true;
+                    }
+
+                    noteText.Add(noteLine);
+                }
+                else
+                    TryAddFirstLink(line);
             }
-#endif
+            if (!linkSectionStarted)
+                noteText.Add("%%ZK:links%%\n***");
+
+            foreach (string line in noteText)
+                TryAddLinks(line);
+            
+            File.WriteAllLines(notePath, noteText);
         }
-        
+
+        /// <summary>
+        /// To parse link section of note for already processed links 
+        /// </summary>
+        private void TryAddFirstLink(string line)
+        {
+            Match linkMatch = Regexes.LinkRegex().Match(line);
+            if (!linkMatch.Success) return;
+            // there is a link in line
+
+            string parsedLinkText = linkMatch.Value[2..^2].Trim();
+            var noteNameMatch = Regexes.NoteName().Match(parsedLinkText);
+            if (!noteNameMatch.Success) return;
+            var linkedNoteName = noteNameMatch.Value;
+            // it is a link to a supposedly zettelkasten note
+
+            var idMatch = Regexes.IdRegex().Match(linkedNoteName);
+            if (!idMatch.Success) return;
+            string linkedNoteId = idMatch.Value;
+            if (Links.ContainsKey(linkedNoteId)) return;
+            // linked note has a valid id
+
+            var newLinkText = linkedNoteName;
+            bool linkHasAlias = parsedLinkText.Contains('|');
+            bool linkedNoteHasLongName = (newLinkText.Trim().Length > linkedNoteId.Trim().Length);
+            if (!linkHasAlias && linkedNoteHasLongName) newLinkText += $"|{linkedNoteId}";
+            // text for new link is ready
+
+            var matchComment = Regexes.LinkComment().Match(line);
+            var linkComment = (matchComment.Success) ? matchComment.Value[1..^1] : "-";
+            // link comment is ready
+
+            LinkData link =  new(newLinkText, linkComment);
+            Links.Add(linkedNoteId, link);
+        }
+        /// <summary>
+        /// To parse note's text for unprocessed links
+        /// </summary>
+        private void TryAddLinks(string line)
+        {
+            foreach (Match linkMatch in Regexes.LinkRegex().Matches(line))
+            {
+                // there is a link in line
+                
+                string parsedLinkText = linkMatch.Value[2..^2].Trim();
+                var noteNameMatch = Regexes.NoteName().Match(parsedLinkText);
+                if (!noteNameMatch.Success) continue;
+                var linkedNoteName = noteNameMatch.Value;
+                // it is a link to a supposedly zettelkasten note
+                
+                var idMatch = Regexes.IdRegex().Match(linkedNoteName);
+                if (!idMatch.Success) continue;
+                string linkedNoteId = idMatch.Value;
+                if (Links.ContainsKey(linkedNoteId)) continue;
+                // linked note has a valid id
+                
+                var newLinkText = linkedNoteName;
+                bool linkedNoteHasLongName = (newLinkText.Trim().Length > linkedNoteId.Trim().Length);
+                if (linkedNoteHasLongName)
+                    newLinkText += $"|{linkedNoteId}";
+                // text for new link is ready
+
+                var aliasMatch = Regexes.LinkAlias().Match(linkMatch.Value);
+                var autoLinkComment = "-";
+                if (aliasMatch.Success) 
+                    autoLinkComment = aliasMatch.Value[1..^2];
+                // comment for new link is ready
+
+                LinkData link = new(newLinkText, autoLinkComment);
+                Links.Add(linkedNoteId, link);
+            }
+        }
+        public void TryAddLinksToConnectedNodes()
+        {
+            string newLinkText; 
+            if (Parent is not null && !Links.ContainsKey(Parent.Id))
+            {
+                newLinkText = (Parent.NoteName.Length > Parent.Id.Length) ? $"{Parent.NoteName}|{Parent.Id}" : Parent.NoteName;
+                Links.Add(Parent.Id, new LinkData(newLinkText));
+            }
+
+            if (Next is not null && !Links.ContainsKey(Next.Id))
+            {
+                newLinkText = (Next.NoteName.Length > Next.Id.Length) ? $"{Next.NoteName}|{Next.Id}" : Next.NoteName;
+                Links.Add(Next.Id, new LinkData(newLinkText));
+            }
+
+            foreach (Node branch in Branches)
+            {
+                if (!Links.ContainsKey(branch.Id))
+                {
+                    newLinkText = (branch.NoteName.Length > branch.Id.Length) ? $"{branch.NoteName}|{branch.Id}" : branch.NoteName;
+                    Links.Add(branch.Id, new LinkData(newLinkText));
+                }
+            }
+        }
+        public LinkData? RetrieveLink(string nodeId)
+        {
+            LinkData? res = null;
+            if (Links.TryGetValue(nodeId, out res))
+            {
+                Links.Remove(nodeId);
+                return res;
+            }
+            return null;
+        }
+
         public void RemoveNext()
         {
             if (Next is null) return;
@@ -132,65 +258,13 @@ namespace zettelkanvas
         public int CompareTo(Node? other)
         {
             if (other is null) return 1;
-            var res = PositionData.CompareTo(other.PositionData);
+            var res = IdData.CompareTo(other.IdData);
             return res;
         }
 
-        public static Regex LinkRegex = new Regex(@"\[\[(\d|[a-zA-Z])+[\w\s]*(\|(.)*)*\]\]", RegexOptions.Compiled);
-        public static Regex noteNameFromLinkRegex = new Regex(@"(\d|[a-zA-Z])+[\w\s]*", RegexOptions.Compiled);
-        public static Regex LinkCommentaryRegex = new Regex(@"(`|\|).+(`|\]\])", RegexOptions.Compiled);
-
-        public void ProcessLinks(out string noteText, out Dictionary<string, LinkData> links )
+        public override string ToString()
         {
-            string fullText = File.ReadAllText(PathToNote);
-            links = new Dictionary<string, LinkData>();
-            var split = fullText.Split("%%ZK:links%%");
-            noteText = split[0];
-            if (!noteText.EndsWith("\n")) noteText += "\n";
-            noteText += "%%ZK:links%%\n***\n";
-
-            if (split.Length > 1)
-            {
-                foreach (var line in split[1].Split("\n")) {
-                    var matchLink = LinkRegex.Match(line);
-                    if (!matchLink.Success) continue;
-                    string linkText = noteNameFromLinkRegex.Match(matchLink.Value).Value.Trim();
-
-                    var matchComm = LinkCommentaryRegex.Match(line);
-                    var link = new LinkData(linkText, (matchComm.Success) ? matchComm.Value.Substring(1, matchComm.Value.Length-2) : "-");
-
-                    links.Add(link.LinkText, link);
-                }
-            }
-
-            foreach (Match match in LinkRegex.Matches(noteText))
-            {
-                string linkText = noteNameFromLinkRegex.Match(match.Value).Value.Trim();
-                var autoCommentMatch = LinkCommentaryRegex.Match(match.Value);
-                string? autoComment = null;
-                if (autoCommentMatch.Success)
-                {
-                    autoComment = autoCommentMatch.Value;
-                    autoComment = autoComment.Substring(1, autoComment.Length - 3);
-                }
-                if (!links.ContainsKey(linkText))
-                    links.Add(linkText, new LinkData(linkText, (autoComment is not null) ? autoComment : "?"));
-            }
-
-            static void TryAdd(string linkText, Dictionary<string, LinkData> links)
-            {
-                if (!links.ContainsKey(linkText))
-                    links.Add(linkText, new LinkData(linkText));
-            }
-
-            if (Parent is not null)
-                TryAdd(Parent.NoteName, links);
-            if (Next is not null)
-                TryAdd(Next.NoteName, links);
-            foreach(var branch in Branches)
-            {
-                TryAdd(branch.NoteName, links);
-            }
+            return NoteName;
         }
     }
 }
