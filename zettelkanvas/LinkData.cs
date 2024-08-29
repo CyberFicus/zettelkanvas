@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace zettelkanvas
+﻿namespace zettelkanvas
 {
     internal class LinkData
     {
@@ -15,7 +9,17 @@ namespace zettelkanvas
             BranchLink,
             OuterLink
         }
-        private static string[] Symbols = ["$<$", "$>$", "$\\vdash$", "$\\odot$"];
+        private static readonly string[] Symbols = ["$<$", "$>$", "$\\vdash$", "$\\odot$"];
+        public static int GetType(string line)
+        {
+            for(int i = 0; i < Symbols.Length; i++)
+            {
+                if (line.Contains(Symbols[i]))
+                    return i;
+            }
+            return -1;
+        }
+
 
         /// <summary>
         /// Link text, including alias
@@ -25,6 +29,12 @@ namespace zettelkanvas
 
         public LinkData(string linkText, string linkComment = "-") {
             LinkText = linkText;
+            LinkComment = linkComment;
+        }
+        public LinkData(Node toNode, string linkComment = "-")
+        {
+            bool longName = (toNode.Id.Length < toNode.NoteName.Length);
+            LinkText = (longName) ? $"{toNode.NoteName}|{toNode.Id}" : toNode.Id;
             LinkComment = linkComment;
         }
 

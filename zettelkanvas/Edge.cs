@@ -39,6 +39,11 @@ namespace zettelkanvas
             var edge = new Edge(fromNode.Id, fromSide, toNode.Id, toSide);
             edge.DisplayArrow = false;
             return edge;
-        }        
+        }
+
+        public override string ToString()
+        {
+            return Id;
+        }
     }
 }

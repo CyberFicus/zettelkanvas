@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using System.Text.RegularExpressions;
 
 namespace zettelkanvas
 {
-    internal partial class Regexes
+    internal static partial class Regexes
     {
         // Searhes for zettelkasten id in note's name
         [GeneratedRegex(@"\d+[a-zA-Z\d]*\b")]

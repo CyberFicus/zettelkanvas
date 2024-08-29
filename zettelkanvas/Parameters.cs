@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace zettelkanvas
 {
@@ -11,6 +7,12 @@ namespace zettelkanvas
         public string TargetDirPath { get; private set; } = "";
         public string OutputFilePath { get; private set; } = "";
         public string FilePropertyBase { get; private set; } = "";
+        public string RootNodeIndicator { get; private set; } = "!";
+        public int UpdatedNoteCouner { get; private set; } = 0;
+        public void IncrementNoteCounter()
+        {
+            UpdatedNoteCouner++;
+        }
 
         public Parameters(string[] args)
         {

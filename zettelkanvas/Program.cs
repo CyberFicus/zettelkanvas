@@ -103,11 +103,6 @@ namespace zettelkanvas
             
             List<Node> rootNodes = BuildTrees(nodeList);
 
-            foreach (var node in nodeList) 
-            {
-                node.TryAddLinksToConnectedNodes();
-            }
-
             rootNodes[0].Arrange(out int length, out int height);
             for (int i = 1; i < rootNodes.Count; i++)
             {
@@ -115,16 +110,24 @@ namespace zettelkanvas
                 rootNodes[i].Arrange(out length, out height);
             }
 
-            var Canvas = new Canvas(nodeList, idToNode);
+            List<Edge> edgeList = [];
+            foreach (var node in nodeList)
+            {
+                edgeList.AddRange(node.ProcessNote(idToNode));
+            }
 
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+            var Canvas = new Canvas(nodeList, edgeList);
+
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
             var canvasJson = JsonSerializer.Serialize(Canvas, jsonOptions);
-            
+            var canvasFormattedJson = canvasJson.Replace("\\u0022", "\"").Replace("\"{", "{").Replace("}\"", "}").Replace("  ", "\t").Replace(": [", ":[");
+
             File.WriteAllBytes(
                 parameters.OutputFilePath,
-                Encoding.UTF8.GetBytes(canvasJson)
+                Encoding.UTF8.GetBytes(canvasFormattedJson)
             );
-            Console.WriteLine("Zettelkanvas finished work sucessfully");
+
+            Console.WriteLine($"zettelkanvas: {parameters.UpdatedNoteCouner} notes updated");
         }
     }
 }
