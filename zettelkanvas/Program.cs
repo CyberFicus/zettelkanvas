@@ -1,9 +1,12 @@
 ﻿using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace zettelkanvas
+using Zettelkanvas.Edges;
+using Zettelkanvas.Nodes;
+using Zettelkanvas.Static;
+
+namespace Zettelkanvas
 {
     internal static class Program
     {
@@ -53,26 +56,28 @@ namespace zettelkanvas
                         mainlineNode = node;
                         break;
                     }
-#pragma warning disable CS8602
-                    if (IdData.IsBranchBase(currentNode.IdData, node.IdData))
-#pragma warning restore CS8602
+                    var relation = currentNode.Relation(node);
+                    if (relation == 0)
+                    {
+                        currentNode.SetNext(node);
+                        break;
+                    }
+                    if (relation == 1)
                     {
                         currentNode.AddBranch(node);
                         break;
                     }
 
-                    if (IdData.IsSuitableNext(currentNode.IdData, node.IdData))
-                    {
-                        currentNode.SetNext(node);
-                        break;
-                    }
                     if (currentNode == mainlineNode)
                     {
                         mainlineNode.SetNext(node);
                         mainlineNode = node;
                         break;
                     }
-                    currentNode = currentNode.Parent;
+                    if (currentNode.Parent is not null)
+                        currentNode = currentNode.Parent;
+                    else
+                        throw new NotImplementedException();
                 }
                 currentNode = node;
             }
@@ -88,18 +93,16 @@ namespace zettelkanvas
                 "testdir\\zettelkanvas"
             ];
 #endif
-            Parameters parameters;
             try
             {
-                parameters = new(args);
-                Node.Parameters = parameters;
+                Parameters.SetParameters(args);
             } catch
             {
                 Console.WriteLine("Programm execution interrupted");
                 return;
             }
 
-            List<Node> nodeList = GetNodesFromDir(parameters.TargetDirPath, out Dictionary<string, Node> idToNode);
+            List<Node> nodeList = GetNodesFromDir(Parameters.TargetDirPath, out Dictionary<string, Node> idToNode);
             
             List<Node> rootNodes = BuildTrees(nodeList);
 
@@ -123,11 +126,11 @@ namespace zettelkanvas
             var canvasFormattedJson = canvasJson.Replace("\\u0022", "\"").Replace("\"{", "{").Replace("}\"", "}").Replace("  ", "\t").Replace(": [", ":[");
 
             File.WriteAllBytes(
-                parameters.OutputFilePath,
+                Parameters.OutputFilePath,
                 Encoding.UTF8.GetBytes(canvasFormattedJson)
             );
 
-            Console.WriteLine($"zettelkanvas: {parameters.UpdatedNoteCouner} notes updated");
+            Console.WriteLine($"zettelkanvas: {Parameters.UpdatedNoteCouner} notes updated");
         }
     }
 }

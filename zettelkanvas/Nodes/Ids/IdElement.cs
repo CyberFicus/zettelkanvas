@@ -1,6 +1,7 @@
 ﻿using System.Text.RegularExpressions;
+using Zettelkanvas.Static;
 
-namespace zettelkanvas
+namespace Zettelkanvas.Nodes.Ids
 {
     internal struct IdElement : IComparable<IdElement>
     {
@@ -21,7 +22,7 @@ namespace zettelkanvas
             if (Number < other.Number) return -1;
             if (Number > other.Number) { return 1; }
 
-            return String.Compare(Branch, other.Branch, StringComparison.InvariantCulture);
+            return string.Compare(Branch, other.Branch, StringComparison.InvariantCulture);
         }
         public override string ToString()
         {

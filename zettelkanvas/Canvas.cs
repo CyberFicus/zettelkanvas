@@ -1,7 +1,10 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace zettelkanvas
+using Zettelkanvas.Edges;
+using Zettelkanvas.Nodes;
+
+namespace Zettelkanvas
 {
     internal class Canvas
     {

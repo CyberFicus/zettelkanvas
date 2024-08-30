@@ -2,7 +2,12 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace zettelkanvas
+using Zettelkanvas.Edges;
+using Zettelkanvas.Nodes.Ids;
+using Zettelkanvas.Nodes.Links;
+using Zettelkanvas.Static;
+
+namespace Zettelkanvas.Nodes
 {
     internal class Node : IComparable<Node>
     {
@@ -22,8 +27,6 @@ namespace zettelkanvas
         public int Height { get { return 400; } }
 
         [JsonIgnore]
-        public static Parameters? Parameters { get; set; } = null;
-        [JsonIgnore]
         public string NotePath { get; private set; }
         [JsonIgnore]
         public IdData IdData { get; set; }
@@ -41,7 +44,7 @@ namespace zettelkanvas
         [JsonIgnore]
         public Node? Next { get; private set; }
         [JsonIgnore]
-        public List<Node> Branches { get;} = new List<Node>();
+        public List<Node> Branches { get; } = new List<Node>();
 
         public Node(string notePath, string id, string noteName)
         {
@@ -55,7 +58,7 @@ namespace zettelkanvas
             if (int.TryParse(id, out _) && NoteName.Contains(Parameters.RootNodeIndicator))
                 IsRoot = true;
         }
- 
+
         public void RemoveNext()
         {
             if (Next is null) return;
@@ -119,7 +122,7 @@ namespace zettelkanvas
         {
             originalText = new(File.ReadAllLines(NotePath));
             noteSection = [];
-            linkSection = [];         
+            linkSection = [];
 
             for (int i = 0; i < originalText.Count; i++)
             {
@@ -157,18 +160,18 @@ namespace zettelkanvas
                 int linkType = LinkData.GetType(line);
                 switch (linkType)
                 {
-                    case (int)LinkData.TypeSymbol.PrevLink:
+                    case (int)LinkType.ParentLink:
                         if (links.previousNodeLink == null)
                             links.previousNodeLink = link;
                         break;
-                    case (int)LinkData.TypeSymbol.NextLink:
+                    case (int)LinkType.NextLink:
                         if (links.nextNodeLink == null)
                             links.nextNodeLink = link;
                         break;
-                    case (int)LinkData.TypeSymbol.BranchLink:
+                    case (int)LinkType.BranchLink:
                         links.branchLinks.TryAdd(id, link);
                         break;
-                    case (int)LinkData.TypeSymbol.OuterLink:
+                    case (int)LinkType.OuterLink:
                         links.outerLinks.TryAdd(id, link);
                         break;
                 }
@@ -184,7 +187,7 @@ namespace zettelkanvas
                     if (drop) continue;
 
                     var newLinkText = linkedNoteName;
-                    bool linkedNoteHasLongName = (parsedLinkText.Length > linkedNoteId.Length);
+                    bool linkedNoteHasLongName = parsedLinkText.Length > linkedNoteId.Length;
                     if (linkedNoteHasLongName)
                         newLinkText += $"|{linkedNoteId}";
 
@@ -210,11 +213,11 @@ namespace zettelkanvas
                 bool linkHasAlias = parsedLinkText.Contains('|');
                 if (linkHasAlias)
                     newLinkText = parsedLinkText;
-                bool linkedNoteHasLongName = (parsedLinkText.Length > linkedNoteId.Length);
+                bool linkedNoteHasLongName = parsedLinkText.Length > linkedNoteId.Length;
                 if (!linkHasAlias && linkedNoteHasLongName) newLinkText += $"|{linkedNoteId}";
 
                 var matchComment = Regexes.LinkComment().Match(line);
-                var linkComment = (matchComment.Success) ? matchComment.Value[1..^1] : "-";
+                var linkComment = matchComment.Success ? matchComment.Value[1..^1] : "-";
 
                 LinkData link = new(newLinkText, linkComment);
                 AssignLink(line, linkedNoteId, link);
@@ -244,22 +247,22 @@ namespace zettelkanvas
 
             if (Parent is not null)
             {
-                links.previousNodeLink = (links.previousNodeLink is null) ? GetLinkFromNodeOrUnclassified(Parent) : links.previousNodeLink;
-                newLinkSection.Add(links.previousNodeLink.Print(LinkData.TypeSymbol.PrevLink));
+                links.previousNodeLink = links.previousNodeLink is null ? GetLinkFromNodeOrUnclassified(Parent) : links.previousNodeLink;
+                newLinkSection.Add(links.previousNodeLink.Print(LinkType.ParentLink));
                 edges.Add(Edge.TreeLink(Parent.Id, Id));
             }
 
             if (Next is not null)
             {
-                links.nextNodeLink = (links.nextNodeLink is null) ? GetLinkFromNodeOrUnclassified(Next) : links.nextNodeLink;
-                newLinkSection.Add(links.nextNodeLink.Print(LinkData.TypeSymbol.NextLink));
+                links.nextNodeLink = links.nextNodeLink is null ? GetLinkFromNodeOrUnclassified(Next) : links.nextNodeLink;
+                newLinkSection.Add(links.nextNodeLink.Print(LinkType.NextLink));
             }
 
             foreach (Node branch in Branches)
             {
                 LinkData? branchLink;
                 bool set = links.branchLinks.TryGetValue(branch.Id, out branchLink);
-                branchLink = (set) ? branchLink : GetLinkFromNodeOrUnclassified(branch);
+                branchLink = set ? branchLink : GetLinkFromNodeOrUnclassified(branch);
 
                 Debug.Assert(branchLink is not null);
                 if (branchLink is null)
@@ -267,7 +270,7 @@ namespace zettelkanvas
                     Console.Error.WriteLine($"Error: unable to set link from {Id} to {branch.Id}");
                     continue;
                 }
-                newLinkSection.Add(branchLink.Print(LinkData.TypeSymbol.BranchLink));
+                newLinkSection.Add(branchLink.Print(LinkType.BranchLink));
             }
 
             foreach (var pair in links.unclassidiedLinks)
@@ -288,7 +291,7 @@ namespace zettelkanvas
             foreach (Node node in outerLinkedNodes)
             {
                 var link = links.outerLinks[node.Id];
-                newLinkSection.Add(link.Print(LinkData.TypeSymbol.OuterLink));
+                newLinkSection.Add(link.Print(LinkType.OuterLink));
                 edges.Add(Edge.OuterLink(this, node));
             }
 
@@ -308,12 +311,17 @@ namespace zettelkanvas
             newText.Add("***");
             newText.AddRange(newLinkSection);
 
-            if (!Enumerable.SequenceEqual(originalText, newText))
+            if (!originalText.SequenceEqual(newText))
             {
                 File.WriteAllLines(NotePath, newText);
                 Parameters.IncrementNoteCounter();
             }
             return edges;
+        }
+
+        public int Relation(Node node)
+        {
+            return IdData.Relation(this.IdData, node.IdData);
         }
 
         public int CompareTo(Node? other)
