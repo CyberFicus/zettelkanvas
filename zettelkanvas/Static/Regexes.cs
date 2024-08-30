@@ -1,6 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 
-namespace zettelkanvas
+namespace Zettelkanvas.Static
 {
     internal static partial class Regexes
     {

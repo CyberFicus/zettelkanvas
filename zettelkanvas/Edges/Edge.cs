@@ -1,11 +1,13 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace zettelkanvas
+using zettelkanvas.Nodes;
+
+namespace zettelkanvas.Edges
 {
     internal class Edge
     {
         [JsonPropertyName("id")]
-        public string Id {  get; set; }
+        public string Id { get; set; }
         [JsonPropertyName("fromNode")]
         public string FromNode { get; set; }
         [JsonPropertyName("fromSide")]
@@ -14,18 +16,21 @@ namespace zettelkanvas
         public string ToNode { get; set; }
         [JsonPropertyName("toSide")]
         public string ToSide { get; set; }
+
         [JsonIgnore]
-        public bool DisplayArrow { get; set; } = true;
+        EdgeArrowType EdgeMode { get; set; } = EdgeArrowType.Forward;
+        [JsonPropertyName("fromEnd")]
+        public string? FromEnd { get { return (2 & (int)EdgeMode) != 0 ? "arrow" : null; } }
         [JsonPropertyName("toEnd")]
-        public string? ToEnd { get { return (DisplayArrow) ? null : "none"; } } 
-        
+        public string? ToEnd { get { return (1 & (int)EdgeMode) != 0 ? null : "none"; } }
+
         public Edge(string fromNode, string fromSide, string toNode, string toSide)
         {
-            this.Id = fromNode + "to" + toNode;
-            this.FromNode = fromNode;
-            this.FromSide = fromSide;
-            this.ToNode = toNode;
-            this.ToSide = toSide;
+            Id = fromNode + "to" + toNode;
+            FromNode = fromNode;
+            FromSide = fromSide;
+            ToNode = toNode;
+            ToSide = toSide;
         }
         public static Edge TreeLink(string fromNodeId, string toNodeId)
         {
@@ -33,11 +38,11 @@ namespace zettelkanvas
         }
         public static Edge OuterLink(Node fromNode, Node toNode)
         {
-            string fromSide = (fromNode.Y <= toNode.Y) ? "bottom" : "top";
-            string toSide = (fromNode.Y < toNode.Y) ? "top" : "bottom";
+            string fromSide = fromNode.Y <= toNode.Y ? "bottom" : "top";
+            string toSide = fromNode.Y < toNode.Y ? "top" : "bottom";
 
             var edge = new Edge(fromNode.Id, fromSide, toNode.Id, toSide);
-            edge.DisplayArrow = false;
+            edge.EdgeMode = EdgeArrowType.None;
             return edge;
         }
 
