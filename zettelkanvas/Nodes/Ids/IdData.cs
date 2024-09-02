@@ -51,7 +51,7 @@ namespace Zettelkanvas.Nodes.Ids
                     return -1;
             }
 
-            if (first.NameParts.Count - second.NameParts.Count > 0) return 0;
+            if (second.NameParts.Count - first.NameParts.Count > 0) return 0;
             bool noBranches = first.NameParts[i].Branch == "" && second.NameParts[i].Branch == "";
             bool secondHasBuggerNumber = first.NameParts[i].Number < second.NameParts[i].Number;
             if (noBranches && secondHasBuggerNumber) return 0;

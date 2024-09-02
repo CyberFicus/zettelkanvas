@@ -107,17 +107,12 @@ namespace Zettelkanvas.Nodes
                 length += lengthBuf; height = int.Max(height, heightBuf);
             }
         }
-
-        private struct LinksInfo
+        
+        public int Relation(Node node)
         {
-            public LinkData? previousNodeLink = null;
-            public LinkData? nextNodeLink = null;
-            public Dictionary<string, LinkData> unclassidiedLinks = [];
-            public Dictionary<string, LinkData> branchLinks = [];
-            public Dictionary<string, LinkData> outerLinks = [];
-
-            public LinksInfo() { }
+            return IdData.Relation(this.IdData, node.IdData);
         }
+
         private void SplitText(out List<string> originalText, out List<string> noteSection, out List<string> linkSection)
         {
             originalText = new(File.ReadAllLines(NotePath));
@@ -135,163 +130,71 @@ namespace Zettelkanvas.Nodes
                 noteSection.Add(originalText[i]);
             }
         }
-        private LinksInfo ProcessLinks(List<string> noteSection, List<string> linkSection)
+        private Dictionary<string, LinkData> GetLinks(List<string> noteSection, List<string> linkSection)
         {
-            LinksInfo links = new();
+            Dictionary<string, LinkData> links = [];
 
-            bool ValidateLinkMatch(string linkText, out string noteName, out string noteId)
-            {
-                noteName = "";
-                noteId = "";
-
-                var noteNameMatch = Regexes.NoteName().Match(linkText);
-                if (!noteNameMatch.Success) return false;
-                noteName = noteNameMatch.Value;
-
-                var idMatch = Regexes.IdRegex().Match(noteName);
-                if (!idMatch.Success) return false;
-                noteId = idMatch.Value;
-                if (links.unclassidiedLinks.ContainsKey(noteId)) return false;
-
-                return true;
-            }
-            void AssignLink(string line, string id, LinkData link)
-            {
-                int linkType = LinkData.GetType(line);
-                switch (linkType)
-                {
-                    case (int)LinkType.ParentLink:
-                        if (links.previousNodeLink == null)
-                            links.previousNodeLink = link;
-                        break;
-                    case (int)LinkType.NextLink:
-                        if (links.nextNodeLink == null)
-                            links.nextNodeLink = link;
-                        break;
-                    case (int)LinkType.BranchLink:
-                        links.branchLinks.TryAdd(id, link);
-                        break;
-                    case (int)LinkType.OuterLink:
-                        links.outerLinks.TryAdd(id, link);
-                        break;
-                }
-                if (links.unclassidiedLinks.ContainsKey(id))
-                    links.unclassidiedLinks.Remove(id);
-            }
-            void ProcessNoteSectionLine(string line)
-            {
-                foreach (Match linkMatch in Regexes.LinkRegex().Matches(line))
-                {
-                    string parsedLinkText = linkMatch.Value[2..^2];
-                    bool drop = !ValidateLinkMatch(parsedLinkText, out var linkedNoteName, out var linkedNoteId);
-                    if (drop) continue;
-
-                    var newLinkText = linkedNoteName;
-                    bool linkedNoteHasLongName = parsedLinkText.Length > linkedNoteId.Length;
-                    if (linkedNoteHasLongName)
-                        newLinkText += $"|{linkedNoteId}";
-
-                    var aliasMatch = Regexes.LinkAlias().Match(linkMatch.Value);
-                    var autoLinkComment = "-";
-                    if (aliasMatch.Success)
-                        autoLinkComment = aliasMatch.Value[1..^2];
-
-                    LinkData link = new(newLinkText, autoLinkComment);
-                    links.unclassidiedLinks.Add(linkedNoteId, link);
-                }
-            }
-            void ProcessLinkSectionLine(string line)
-            {
-                Match linkMatch = Regexes.LinkRegex().Match(line);
-                if (!linkMatch.Success) return;
-
-                string parsedLinkText = linkMatch.Value[2..^2]; ;
-                bool drop = !ValidateLinkMatch(parsedLinkText, out var linkedNoteName, out var linkedNoteId);
-                if (drop) return;
-
-                var newLinkText = linkedNoteName;
-                bool linkHasAlias = parsedLinkText.Contains('|');
-                if (linkHasAlias)
-                    newLinkText = parsedLinkText;
-                bool linkedNoteHasLongName = parsedLinkText.Length > linkedNoteId.Length;
-                if (!linkHasAlias && linkedNoteHasLongName) newLinkText += $"|{linkedNoteId}";
-
-                var matchComment = Regexes.LinkComment().Match(line);
-                var linkComment = matchComment.Success ? matchComment.Value[1..^1] : "-";
-
-                LinkData link = new(newLinkText, linkComment);
-                AssignLink(line, linkedNoteId, link);
+            foreach (string line in noteSection) { 
+                var lineLinks = LinkData.ProcessNoteSectionLine(line);
+                foreach (var link in lineLinks)
+                    links.TryAdd(link.LinkedNoteId, link);
             }
 
-            foreach (string line in noteSection)
-                ProcessNoteSectionLine(line);
-            foreach (string line in linkSection)
-                ProcessLinkSectionLine(line);
+            if (Parent is not null)
+                links.TryAdd(Parent.Id, new LinkData(Parent));
+            if (Next is not null)
+                links.TryAdd(Next.Id, new LinkData(Next));
+            foreach (var branch in Branches)
+                links.TryAdd(branch.Id, new LinkData(branch));
+
+            foreach (string line in linkSection) { 
+                var link = LinkData.ProcessLinkSectionLine(line);
+                if (link is not null && links.ContainsKey(link.LinkedNoteId))
+                    links[link.LinkedNoteId] = link;
+            }
 
             return links;
         }
-        private List<string> FormLinkSectionAndEdges(LinksInfo links, Dictionary<string, Node> idToNode, out List<Edge> edges)
+        private List<string> FormLinkSectionAndEdges(Dictionary<string, LinkData> links, Dictionary<string, Node> idToNode, out List<Edge> edges)
         {
             List<string> newLinkSection = [];
             edges = new();
 
-            LinkData GetLinkFromNodeOrUnclassified(Node node)
+            LinkData Retrieve(string id)
             {
-                if (links.unclassidiedLinks.TryGetValue(node.Id, out var link))
-                {
-                    links.unclassidiedLinks.Remove(node.Id);
-                    return link;
-                }
-                return new LinkData(node);
+                LinkData res = links[id];
+                links.Remove(id);
+                return res;
             }
 
             if (Parent is not null)
             {
-                links.previousNodeLink = links.previousNodeLink is null ? GetLinkFromNodeOrUnclassified(Parent) : links.previousNodeLink;
-                newLinkSection.Add(links.previousNodeLink.Print(LinkType.ParentLink));
+                var link = Retrieve(Parent.Id);
+                newLinkSection.Add(link.Print(LinkType.ParentLink));
                 edges.Add(Edge.TreeLink(Parent.Id, Id));
             }
 
             if (Next is not null)
             {
-                links.nextNodeLink = links.nextNodeLink is null ? GetLinkFromNodeOrUnclassified(Next) : links.nextNodeLink;
-                newLinkSection.Add(links.nextNodeLink.Print(LinkType.NextLink));
+                var link = Retrieve(Next.Id);
+                newLinkSection.Add(link.Print(LinkType.NextLink));
             }
 
             foreach (Node branch in Branches)
             {
-                LinkData? branchLink;
-                bool set = links.branchLinks.TryGetValue(branch.Id, out branchLink);
-                branchLink = set ? branchLink : GetLinkFromNodeOrUnclassified(branch);
-
-                Debug.Assert(branchLink is not null);
-                if (branchLink is null)
-                {
-                    Console.Error.WriteLine($"Error: unable to set link from {Id} to {branch.Id}");
-                    continue;
-                }
-                newLinkSection.Add(branchLink.Print(LinkType.BranchLink));
+                var link = Retrieve(branch.Id);
+                newLinkSection.Add(link.Print(LinkType.BranchLink));
             }
 
-            foreach (var pair in links.unclassidiedLinks)
-                links.outerLinks.TryAdd(pair.Key, pair.Value);
             List<Node> outerLinkedNodes = [];
-            foreach (var pair in links.outerLinks)
-            {
-                bool nodeExists = links.outerLinks.ContainsKey(pair.Key);
-                Debug.Assert(nodeExists);
-                if (!nodeExists)
-                {
-                    Console.Error.WriteLine($"Error: unable to set link from {Id} to {pair.Key}");
-                    continue;
-                }
+            foreach (var pair in links)
                 outerLinkedNodes.Add(idToNode[pair.Key]);
-            }
             outerLinkedNodes.Sort();
+
             foreach (Node node in outerLinkedNodes)
             {
-                var link = links.outerLinks[node.Id];
-                newLinkSection.Add(link.Print(LinkType.OuterLink));
+                var outerLink = links[node.Id];
+                newLinkSection.Add(outerLink.Print(LinkType.OuterLink));
                 edges.Add(Edge.OuterLink(this, node));
             }
 
@@ -302,13 +205,13 @@ namespace Zettelkanvas.Nodes
             List<string> originalText, oldLinkSection, noteSection;
             SplitText(out originalText, out noteSection, out oldLinkSection);
 
-            LinksInfo links = ProcessLinks(noteSection, oldLinkSection);
+            Dictionary<string, LinkData> links = GetLinks(noteSection, oldLinkSection);
 
             List<string> newLinkSection = FormLinkSectionAndEdges(links, idToNode, out var edges);
 
             List<string> newText = new(noteSection);
             newText.Add("%%ZK:links%%");
-            newText.Add("***");
+            newText. Add("***");
             newText.AddRange(newLinkSection);
 
             if (!originalText.SequenceEqual(newText))
@@ -317,11 +220,6 @@ namespace Zettelkanvas.Nodes
                 Parameters.IncrementNoteCounter();
             }
             return edges;
-        }
-
-        public int Relation(Node node)
-        {
-            return IdData.Relation(this.IdData, node.IdData);
         }
 
         public int CompareTo(Node? other)
