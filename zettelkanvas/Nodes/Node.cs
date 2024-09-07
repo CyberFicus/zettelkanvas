@@ -11,20 +11,27 @@ namespace Zettelkanvas.Nodes
 {
     internal class Node : IComparable<Node>
     {
-        [JsonPropertyName("id")]
         public string Id { get; private set; }
-        [JsonPropertyName("file")]
         public string FileProperty { get; private set; }
-        [JsonPropertyName("type")]
         public string Type { get { return "file"; } }
-        [JsonPropertyName("x")]
         public int OutputX { get { return X * 600; } }
-        [JsonPropertyName("y")]
         public int OutputY { get { return Y * 600; } }
-        [JsonPropertyName("width")]
         public int Width { get { return 400; } }
-        [JsonPropertyName("height")]
         public int Height { get { return 400; } }
+        public string? Color { get; private set; } = null;
+
+        public string Print()
+        {
+            var idString = $"\"id\":\"{Id}\"";
+            var fileString = $",\"file\":\"{FileProperty}\"";
+            var typeString = $",\"type\":\"file\"";
+            var xString = $",\"x\":{OutputX}";
+            var yString = $",\"y\":{OutputY}";
+            var widthString = $",\"width\":{Width}";
+            var heightString = $",\"height\":{Height}";
+            var colorString = (Color is null) ? "" : $",\"color\":\"{Color}\"";
+            return $"{{{idString}{fileString}{typeString}{xString}{yString}{widthString}{heightString}{colorString}}}";
+        }
 
         [JsonIgnore]
         public string NotePath { get; private set; }

@@ -6,23 +6,28 @@ namespace Zettelkanvas.Edges
 {
     internal class Edge
     {
-        [JsonPropertyName("id")]
         public string Id { get; set; }
-        [JsonPropertyName("fromNode")]
         public string FromNode { get; set; }
-        [JsonPropertyName("fromSide")]
         public string FromSide { get; set; }
-        [JsonPropertyName("toNode")]
         public string ToNode { get; set; }
-        [JsonPropertyName("toSide")]
         public string ToSide { get; set; }
-
-        [JsonIgnore]
         EdgeArrowType EdgeMode { get; set; } = EdgeArrowType.Forward;
-        [JsonPropertyName("fromEnd")]
         public string? FromEnd { get { return (2 & (int)EdgeMode) != 0 ? "arrow" : null; } }
-        [JsonPropertyName("toEnd")]
         public string? ToEnd { get { return (1 & (int)EdgeMode) != 0 ? null : "none"; } }
+        public string? Color { get; private set; } = null;
+
+        public string Print()
+        {
+            var idString = $"\"id\":\"{Id}\"";
+            var fromNodeString = $",\"fromNode\":\"{FromNode}\"";
+            var fromSideString = $",\"fromSide\":\"{FromSide}\"";
+            var toNodeString = $",\"toNode\":\"{ToNode}\"";
+            var toSideString = $",\"toSide\":\"{ToSide}\"";
+            var fromEndString = (FromEnd is not null) ? $",\"fromEnd\":\"{FromEnd}\"" : "";
+            var toEndSting = (ToEnd is not null) ? $",\"toEnd\":\"none\"" : "";
+            var colorString = (Color is not null) ? $",\"color\":\"{Color}\"" : "";
+            return $"{{{idString}{fromNodeString}{fromSideString}{toNodeString}{toSideString}{fromEndString}{toEndSting}{colorString}}}";
+        }
 
         public Edge(string fromNode, string fromSide, string toNode, string toSide)
         {

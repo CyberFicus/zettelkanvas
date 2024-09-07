@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 using Zettelkanvas.Edges;
@@ -20,9 +21,9 @@ namespace Zettelkanvas
             {
                 if (!filePath.EndsWith(".md")) continue;
                 string noteName = filePath.Substring(pathLength + 1, filePath.Length - pathLength - 4);
-                Match idMatch = Regexes.IdRegex().Match(noteName);
+                Match idMatch = Regexes.IdInFileName().Match(noteName);
                 if (!idMatch.Success) continue;
-                string id = idMatch.Value;
+                string id = idMatch.Value.Trim();
                 if (idToNode.ContainsKey(id)) continue;
 
                 Node newNode = new(filePath, id, noteName);
@@ -84,7 +85,26 @@ namespace Zettelkanvas
 
             return rootNodes;
         }
+        private static List<string> BuildCanvas(List<Node> nodes, List<Edge> edges)
+        {
+            List<string> canvas = ["{", "\t\"nodes\":["];
 
+            var jsonOptions = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+            foreach (Node node in nodes)
+                canvas.Add("\t\t" + node.Print() + ",");
+            canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
+
+            canvas.AddRange(["\t],", "\t\"edges\":["]);
+
+            foreach (Edge edge in edges)
+                canvas.Add("\t\t" + edge.Print() + ",");
+            canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
+
+            canvas.AddRange(["\t]", "}"]);
+
+            return canvas;
+        }
         static void Main(string[] args)
         {
 #if DEBUG
@@ -119,16 +139,9 @@ namespace Zettelkanvas
                 edgeList.AddRange(node.ProcessNote(idToNode));
             }
 
-            var Canvas = new Canvas(nodeList, edgeList);
+            var canvas = BuildCanvas(nodeList, edgeList);
 
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-            var canvasJson = JsonSerializer.Serialize(Canvas, jsonOptions);
-            var canvasFormattedJson = canvasJson.Replace("\\u0022", "\"").Replace("\"{", "{").Replace("}\"", "}").Replace("  ", "\t").Replace(": [", ":[");
-
-            File.WriteAllBytes(
-                Parameters.OutputFilePath,
-                Encoding.UTF8.GetBytes(canvasFormattedJson)
-            );
+            File.WriteAllLines(Parameters.OutputFilePath, canvas);
 
             Console.WriteLine($"zettelkanvas: {Parameters.UpdatedNoteCouner} notes updated");
         }

@@ -7,7 +7,7 @@ namespace Zettelkanvas.Nodes.Links
     {
         public string LinkedNoteName { get; private set; }
         public string LinkedNoteId { get; private set; }
-        public string Alias { get; private set; }
+        public string? Alias { get; private set; }
         public string Comment { get; private set; }
 
 
@@ -26,14 +26,16 @@ namespace Zettelkanvas.Nodes.Links
         {
             LinkedNoteName = noteName;
             LinkedNoteId = noteId;
-            Alias = (alias is not null) ? alias : LinkedNoteId;
+            Alias = alias;
             Comment = comment;
         }
         public LinkData(Node toNode, string comment = "-")
         {
             LinkedNoteName = toNode.NoteName;
             LinkedNoteId = toNode.Id;
-            Alias = LinkedNoteId;
+            Alias = null;
+            if (LinkedNoteName.Length > LinkedNoteId.Length)
+                Alias = LinkedNoteId;
             Comment = comment;
             bool noteHasLongName = toNode.Id.Length < toNode.NoteName.Length;
             if (noteHasLongName) 
@@ -50,13 +52,13 @@ namespace Zettelkanvas.Nodes.Links
                 return null;
             var noteName = noteNameMatch.Value;
 
-            var idMatch = Regexes.IdRegex().Match(noteName);
+            var idMatch = Regexes.IdInFileName().Match(noteName);
             if (!idMatch.Success) 
                 return null;
-            var noteId = idMatch.Value;
+            var noteId = idMatch.Value.Trim();
 
             var aliasMatch = Regexes.LinkAlias().Match(linkMatch.Value);
-            string alias = noteId;
+            string? alias = null;
             bool hasAlias = (aliasMatch.Success);
             if (hasAlias)
                 alias = aliasMatch.Value[1..^2];
@@ -66,16 +68,18 @@ namespace Zettelkanvas.Nodes.Links
         public static List<LinkData> ProcessNoteSectionLine(string line)
         {
             List<LinkData> resList = [];
-            foreach (Match linkMatch in Regexes.LinkRegex().Matches(line))
-            {
+            foreach (Match linkMatch in Regexes.ObsidianLink().Matches(line))
+            {   
                 var link = ValidateLinkMatch(linkMatch);
                 if (link is null) continue;
 
-                if (link.Alias != link.LinkedNoteId)
+                if (link.Alias is not null)
                 {
                     link.Comment = link.Alias;
-                    link.Alias = link.LinkedNoteId;
+                    link.Alias = null;
                 }
+                if (link.LinkedNoteName.Length > link.LinkedNoteId.Length)
+                    link.Alias = link.LinkedNoteId;
 
                 resList.Add(link);
             }
@@ -83,9 +87,18 @@ namespace Zettelkanvas.Nodes.Links
         }
         public static LinkData? ProcessLinkSectionLine(string line)
         {
-            var linkMatch = Regexes.LinkRegex().Match(line);
+            var linkMatch = Regexes.ObsidianLink().Match(line);
             var link = ValidateLinkMatch(linkMatch);
             if (link is null) return null;
+
+            if (link.Alias is not null)
+            {
+                bool aliasIsId = Regexes.LinkAlias().Match(link.Alias).Success;
+                if (aliasIsId)
+                    link.Alias = link.LinkedNoteId;
+            }
+            else if (link.LinkedNoteId.Length < link.LinkedNoteName.Length)
+                link.Alias = link.LinkedNoteId;
 
             var commentMatch = Regexes.LinkComment().Match(line);
             string comment = (commentMatch.Success) ? commentMatch.Value[1..^1] : "-";
