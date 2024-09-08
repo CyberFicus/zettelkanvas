@@ -5,6 +5,6 @@
         None = 0,
         Forward = 1,
         Reverse = 2,
-        TwoWay = 3,
+        TwoSided = 3,
     }
 }

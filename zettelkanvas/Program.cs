@@ -108,17 +108,23 @@ namespace Zettelkanvas
         static void Main(string[] args)
         {
 #if DEBUG
+            var err = new Exception("");
+
+            Directory.SetCurrentDirectory("..\\..\\..\\..\\ZKTest");
             args = [
                 "testdir\\testdirZK",
-                "testdir\\zettelkanvas"
+                "testdir\\zettelkanvas",
+                "zettelkanvas.config"
             ];
 #endif
             try
             {
                 Parameters.SetParameters(args);
-            } catch
+            } catch (Exception e)
             {
-                Console.WriteLine("Programm execution interrupted");
+                if (e.Message != "")
+                    Console.WriteLine($"Error: {e.Message}");
+                Console.WriteLine("Programm execution interrupted.");
                 return;
             }
 

@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-
+using zettelkanvas;
 using Zettelkanvas.Edges;
 using Zettelkanvas.Nodes.Ids;
 using Zettelkanvas.Nodes.Links;
@@ -14,11 +14,11 @@ namespace Zettelkanvas.Nodes
         public string Id { get; private set; }
         public string FileProperty { get; private set; }
         public string Type { get { return "file"; } }
-        public int OutputX { get { return X * 600; } }
-        public int OutputY { get { return Y * 600; } }
-        public int Width { get { return 400; } }
-        public int Height { get { return 400; } }
-        public string? Color { get; private set; } = null;
+        public int OutputX { get { return X * (int) (Parameters.NodeWidth + Parameters.NodeDistance); } }
+        public int OutputY { get { return Y * (int) (Parameters.NodeHeight + Parameters.NodeDistance); } }
+        public uint Width { get { return Parameters.NodeWidth; } }
+        public uint Height { get { return Parameters.NodeHeight; } }
+        public CanvasColor? Color { get; private set; } = Parameters.DefaultNodeColor;
 
         public string Print()
         {
@@ -95,14 +95,24 @@ namespace Zettelkanvas.Nodes
             Y = anchor.Y;
             Move(xDif, yDif);
         }
+        
         public void Arrange(out int length, out int height)
         {
-            length = 1; height = 1;
-            int lengthBuf = 0, heightBuf = 0;
+            if (Parameters.UseLongArrange)
+                ArrangeLong(out length, out height);
+            else 
+                ArrangeWide(out length, out height);
+        }
+        private void ArrangeLong(out int length, out int height)
+        {
+            length = 1; 
+            height = 1;
+            int lengthBuf = 0,
+                heightBuf = 0;
             for (int i = 0; i < Branches.Count; i++)
             {
                 Branches[i].MoveFromNode(this, 1, height);
-                Branches[i].Arrange(out lengthBuf, out heightBuf);
+                Branches[i].ArrangeLong(out lengthBuf, out heightBuf);
                 height += heightBuf;
                 length = int.Max(length, lengthBuf);
             }
@@ -110,11 +120,35 @@ namespace Zettelkanvas.Nodes
             if (Next is not null)
             {
                 Next.MoveFromNode(this, length, 0);
-                Next.Arrange(out lengthBuf, out heightBuf);
-                length += lengthBuf; height = int.Max(height, heightBuf);
+                Next.ArrangeLong(out lengthBuf, out heightBuf);
+                length += lengthBuf; 
+                height = int.Max(height, heightBuf);
             }
         }
-        
+        private void ArrangeWide(out int length, out int height)
+        {
+            length = 1;
+            height = 1;
+            int lengthBuf = 0, 
+                heightBuf = 0;
+            
+            if (Next is not null)
+            {
+                Next.MoveFromNode(this, 1, 0);
+                Next.ArrangeWide(out lengthBuf, out heightBuf);
+                length += lengthBuf;
+                height = int.Max(height, heightBuf);
+            }
+
+            for (int i = 0; i < Branches.Count; i++)
+            {
+                Branches[i].MoveFromNode(this, 1, height);
+                Branches[i].ArrangeWide(out lengthBuf, out heightBuf);
+                height += heightBuf;
+                length = int.Max(length, lengthBuf);
+            }
+        }
+
         public int Relation(Node node)
         {
             return IdData.Relation(this.IdData, node.IdData);
@@ -195,7 +229,8 @@ namespace Zettelkanvas.Nodes
 
             List<Node> outerLinkedNodes = [];
             foreach (var pair in links)
-                outerLinkedNodes.Add(idToNode[pair.Key]);
+                if (idToNode.ContainsKey(pair.Key))
+                    outerLinkedNodes.Add(idToNode[pair.Key]);
             outerLinkedNodes.Sort();
 
             foreach (Node node in outerLinkedNodes)

@@ -31,5 +31,17 @@ namespace Zettelkanvas.Static
         // Searches for link alias in link from note's text
         [GeneratedRegex(@"\|[^\]]+\]\]")]
         public static partial Regex LinkAlias();
+
+        // Searches for hex color starting with # character
+        [GeneratedRegex(@"#[\da-f]{6}")]
+        public static partial Regex HexColor();
+
+        // Searches for a formatted value in config
+        [GeneratedRegex(@"^\s*[\w\d]+\b\s*:\s*[\d]+")]
+        public static partial Regex ConfigValue();
+
+        // Searches for a formatted color constant in config
+        [GeneratedRegex(@"^\s*\@[\w\d]+\b\s*:\s*(#[\da-f]{6}|\d|\-)+")]
+        public static partial Regex ConfigColor();
     }
 }
