@@ -42,10 +42,14 @@ namespace Zettelkanvas.Nodes
         [JsonIgnore]
         public bool IsRoot { get; private set; } = false;
         [JsonIgnore]
+        public bool InverseArrangement { get; private set; } = false; 
+        [JsonIgnore]
+        public string? LinkAlias { get; private set; } = null;
+        [JsonIgnore]
         public int X { get; set; } = 0;
         [JsonIgnore]
         public int Y { get; set; } = 0;
-
+        
         [JsonIgnore]
         public Node? Parent { get; private set; }
         [JsonIgnore]
@@ -62,8 +66,80 @@ namespace Zettelkanvas.Nodes
 #pragma warning disable CS8602
             FileProperty = Parameters.FilePropertyBase + NoteName + ".md";
 #pragma warning restore CS8602
-            if (int.TryParse(id, out _) && NoteName.Contains(Parameters.RootNodeIndicator))
+            var properties = ReadProperties();
+
+            string? GetProperty(string key)
+            {
+                if (!properties.ContainsKey(key)) return null;
+                var list = properties[key];
+                if (list.Count == 0) return null;
+                string result = list[0];
+                if (result.StartsWith("'") && result.EndsWith("'"))
+                    result = result[1..^1];
+                return result;
+            }
+            
+            LinkAlias = GetProperty("aliases");
+            
+            string? rootValue = GetProperty(Parameters.RootNotePropertyName);
+            if (int.TryParse(id, out _) && (rootValue == "true" || rootValue == "1"))
                 IsRoot = true;
+
+            string? inverseArrangementValue = GetProperty(Parameters.InverseArrangementPropertyName);
+            if (inverseArrangementValue == "true" || inverseArrangementValue == "1")
+                InverseArrangement = true;
+        }
+        private Dictionary<string, List<string>> ReadProperties()
+        {
+            Dictionary<string, List<string>> result = new();
+
+            string[] lines = File.ReadAllLines(this.NotePath);
+            int i = 1;
+            while (i < lines.Length && !lines[i - 1].Contains("---"))
+                i++;
+
+            if (i == lines.Length) return result;
+
+            string currentLongProperty = "";
+            bool readingLingProperty = false;
+
+            while (i < lines.Length && !lines[i].Contains("---"))
+            {
+                string line = lines[i];
+                Match match = Regexes.PropertyOneLine().Match(line);
+                if (match.Success)
+                {
+                    result[match.Groups[1].Value] = new List<string>([match.Groups[4].Value]);
+                    readingLingProperty = false;
+                    i++;
+                    continue;
+                }
+
+                match = Regexes.PropertyMultiLineStart().Match(line);
+                if (match.Success)
+                {
+                    currentLongProperty = match.Groups[1].Value;
+                    result[currentLongProperty] = new List<string>();
+                    readingLingProperty = true;
+                    i++;
+                    continue;
+                }
+
+                if (!readingLingProperty)
+                {
+                    i++;
+                    continue;
+                }
+                match = Regexes.PropertyMultiLinePart().Match(line);
+                if (match.Success)
+                {
+                    result[currentLongProperty].Add(match.Groups[1].Value);
+                }
+                i++;
+            }
+
+
+            return result;
         }
 
         public void RemoveNext()
@@ -95,10 +171,117 @@ namespace Zettelkanvas.Nodes
             Y = anchor.Y;
             Move(xDif, yDif);
         }
-        
+        public void ShiftDown(bool[,] map)
+        {
+            if (map[X, Y + 1]) throw new NotImplementedException();
+
+            map[X, Y + 1] = true;
+            map[X, Y] = false;
+
+            Y++;
+
+            for (int i = Branches.Count - 1; i >= 0; i--)
+                Branches[i].ShiftDown(map);
+            if (Next is null) return;
+            Next.ShiftDown(map);
+        }
+        public bool TryShiftUp(bool[,] map)
+        {
+            bool result = true;
+
+            bool NoNextEdgeCollision()
+            {
+                if (Next is null) return true;
+                if (Next.X - X == 1) return true;
+                for (int x = X+1; x < Next.X; x++)
+                {
+                    if (map[x, Y-1]) return false;
+                }
+                return true;
+            }
+
+            if (map[X, Y - 1] || !NoNextEdgeCollision())
+            {
+                result = false;
+            } else
+            {
+                map[X, Y] = false;
+                map[X, Y-1] = true;
+                Y--;
+
+                if (Next is not null)
+                {
+                    result = Next.TryShiftUp(map);
+                    if (!result)
+                    {
+                        Y++;
+                        map[X, Y - 1] = false;
+                        map[X, Y] = true;
+                        return result;
+                    }
+                }
+                for (int i = 0; i < Branches.Count; i++)
+                {
+                    result = Branches[i].TryShiftUp(map);
+                    if (!result)
+                    {
+                        i--;
+                        while (i >= 0)
+                        {
+                            Branches[i].ShiftDown(map);
+                            i--;
+                        }
+
+                        if (Next is not null)
+                            Next.ShiftDown(map);
+
+                        Y++;
+                        map[X, Y - 1] = false;
+                        map[X, Y] = true;
+
+                        return result;
+                    }
+                }
+            }
+
+            return result;
+        }
+        public void Shrink(bool[,] map)
+        {
+            if (Next is not null)
+                Next.Shrink(map);
+            foreach (var branch in Branches)
+                branch.Shrink(map);
+
+            int GetMinYForRoot()
+            {
+                bool LineIsFree(int y)
+                {
+                    if (y < 0) return false;
+                    for (int x = 0; x < map.GetLength(0); x++)
+                    {
+                        if (map[x, y])
+                            return false;
+                    }
+                    return true;
+                }
+                int minY = Y-1;
+                while (LineIsFree(minY) && minY >=0)
+                    minY--;
+
+                return minY+1;
+            }
+
+            int minY = (Parent is null) ? GetMinYForRoot() : Parent.Y+1;
+
+            bool res = true;
+            while (Y > minY && res)
+                res = TryShiftUp(map);
+        }
+
         public void Arrange(out int length, out int height)
         {
-            if (Parameters.UseLongArrange)
+            if (Parameters.UseLongArrange ^ (this.InverseArrangement && Parameters.AllowInverseArrangement))
                 ArrangeLong(out length, out height);
             else 
                 ArrangeWide(out length, out height);
@@ -112,7 +295,7 @@ namespace Zettelkanvas.Nodes
             for (int i = 0; i < Branches.Count; i++)
             {
                 Branches[i].MoveFromNode(this, 1, height);
-                Branches[i].ArrangeLong(out lengthBuf, out heightBuf);
+                Branches[i].Arrange(out lengthBuf, out heightBuf);
                 height += heightBuf;
                 length = int.Max(length, lengthBuf);
             }
@@ -120,7 +303,7 @@ namespace Zettelkanvas.Nodes
             if (Next is not null)
             {
                 Next.MoveFromNode(this, length, 0);
-                Next.ArrangeLong(out lengthBuf, out heightBuf);
+                Next.Arrange(out lengthBuf, out heightBuf);
                 length += lengthBuf; 
                 height = int.Max(height, heightBuf);
             }
@@ -135,7 +318,7 @@ namespace Zettelkanvas.Nodes
             if (Next is not null)
             {
                 Next.MoveFromNode(this, 1, 0);
-                Next.ArrangeWide(out lengthBuf, out heightBuf);
+                Next.Arrange(out lengthBuf, out heightBuf);
                 length += lengthBuf;
                 height = int.Max(height, heightBuf);
             }
@@ -143,9 +326,9 @@ namespace Zettelkanvas.Nodes
             for (int i = 0; i < Branches.Count; i++)
             {
                 Branches[i].MoveFromNode(this, 1, height);
-                Branches[i].ArrangeWide(out lengthBuf, out heightBuf);
+                Branches[i].Arrange(out lengthBuf, out heightBuf);
                 height += heightBuf;
-                length = int.Max(length, lengthBuf);
+                length = int.Max(length, lengthBuf+1);
             }
         }
 
@@ -249,6 +432,20 @@ namespace Zettelkanvas.Nodes
 
             Dictionary<string, LinkData> links = GetLinks(noteSection, oldLinkSection);
 
+            if (Parameters.LinkAutoAlias)
+            {
+                foreach (var pair in links) 
+                {
+                    LinkData link = pair.Value;
+                    if (!links.ContainsKey(link.LinkedNoteId))
+                        continue;
+                    Node linkedNote = idToNode[link.LinkedNoteId];
+                    if (linkedNote.LinkAlias is null)
+                        continue;
+                    link.Comment = linkedNote.LinkAlias;
+                }
+            }
+
             List<string> newLinkSection = FormLinkSectionAndEdges(links, idToNode, out var edges);
 
             List<string> newText = new(noteSection);
@@ -258,7 +455,12 @@ namespace Zettelkanvas.Nodes
 
             if (!originalText.SequenceEqual(newText))
             {
-                File.WriteAllLines(NotePath, newText);
+                using (StreamWriter writer = new(NotePath))
+                {
+                    writer.NewLine = "\n";
+                    foreach (string line in newText)
+                        writer.WriteLine(line);
+                }
                 Parameters.IncrementNoteCounter();
             }
             return edges;
@@ -272,7 +474,7 @@ namespace Zettelkanvas.Nodes
         }
         public override string ToString()
         {
-            return NoteName;
+            return $"{NoteName} ({X},{Y})";
         }
     }
 }

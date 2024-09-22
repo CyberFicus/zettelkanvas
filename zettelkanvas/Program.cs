@@ -85,6 +85,41 @@ namespace Zettelkanvas
 
             return rootNodes;
         }
+        private static void ArrangeNodes(List<Node> rootNodes)
+        {
+            rootNodes[0].Arrange(out int length, out int height);
+            for (int i = 1; i < rootNodes.Count; i++)
+            {
+                rootNodes[i].MoveFromNode(rootNodes[i - 1], 0, height);
+                rootNodes[i].Arrange(out length, out height);
+            }
+        }
+        private static void ShrinkTrees(List<Node> nodes, List<Node> rootNodes, Dictionary<string, Node> idToNode)
+        {
+            int maxX = 0, maxY = 0;
+            foreach (Node node in nodes)
+            {
+                if (node.X > maxX) maxX = node.X;
+                if (node.Y > maxY) maxY = node.Y;
+            }
+
+            bool[,] map = new bool[maxX + 1, maxY + 1];
+            foreach (Node node in nodes)
+                map[node.X, node.Y] = true;
+
+            foreach (Node root in rootNodes)
+                root.Shrink(map);
+
+        }
+        private static List<Edge> BuildEdges(List<Node> nodeList, Dictionary<string, Node> idToNode)
+        {
+            List<Edge> edgeList = [];
+            foreach (var node in nodeList)
+            {
+                edgeList.AddRange(node.ProcessNote(idToNode));
+            }
+            return edgeList;
+        }
         private static List<string> BuildCanvas(List<Node> nodes, List<Edge> edges)
         {
             List<string> canvas = ["{", "\t\"nodes\":["];
@@ -108,8 +143,6 @@ namespace Zettelkanvas
         static void Main(string[] args)
         {
 #if DEBUG
-            var err = new Exception("");
-
             Directory.SetCurrentDirectory("..\\..\\..\\..\\ZKTest");
             args = [
                 "testdir\\testdirZK",
@@ -132,23 +165,22 @@ namespace Zettelkanvas
             
             List<Node> rootNodes = BuildTrees(nodeList);
 
-            rootNodes[0].Arrange(out int length, out int height);
-            for (int i = 1; i < rootNodes.Count; i++)
+            ArrangeNodes(rootNodes);
+
+            if (Parameters.ShrinkTrees)
+                ShrinkTrees(nodeList, rootNodes, idToNode);
+
+            List<Edge> edgeList = BuildEdges(nodeList, idToNode);
+
+            List<string> canvas = BuildCanvas(nodeList, edgeList);
+
+            using (StreamWriter writer = new(Parameters.OutputFilePath))
             {
-                rootNodes[i].MoveFromNode(rootNodes[i - 1], 0, height);
-                rootNodes[i].Arrange(out length, out height);
+                writer.NewLine = "\n";
+                foreach (string line in canvas)
+                    writer.WriteLine(line);
             }
-
-            List<Edge> edgeList = [];
-            foreach (var node in nodeList)
-            {
-                edgeList.AddRange(node.ProcessNote(idToNode));
-            }
-
-            var canvas = BuildCanvas(nodeList, edgeList);
-
-            File.WriteAllLines(Parameters.OutputFilePath, canvas);
-
+ 
             Console.WriteLine($"zettelkanvas: {Parameters.UpdatedNoteCouner} notes updated");
         }
     }

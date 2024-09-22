@@ -8,7 +8,7 @@ namespace Zettelkanvas.Nodes.Links
         public string LinkedNoteName { get; private set; }
         public string LinkedNoteId { get; private set; }
         public string? Alias { get; private set; }
-        public string Comment { get; private set; }
+        public string Comment { get; set; }
 
 
         private static readonly string[] Symbols = ["$<$", "$>$", "$\\vdash$", "$\\odot$"];

@@ -43,5 +43,17 @@ namespace Zettelkanvas.Static
         // Searches for a formatted color constant in config
         [GeneratedRegex(@"^\s*\@[\w\d]+\b\s*:\s*(#[\da-f]{6}|\d|\-)+")]
         public static partial Regex ConfigColor();
+
+        // Matches a property written in one line
+        [GeneratedRegex(@"^\s*(([\w]+)(\s+[\w]+)*):\s*(([\w.:,;!?\(\)`""`/|\\'&%№*-–—+]+)(\s+[\w.:,;!?\(\)`""`/|\\'&%№*-–—+]+)*)")]
+        public static partial Regex PropertyOneLine();
+
+        // Matches a beginning of multiline property
+        [GeneratedRegex(@"^\s*(([\w]+)(\s+[\w]+)*):\W*$")]
+        public static partial Regex PropertyMultiLineStart();
+
+        // Matches a part of multiline property
+        [GeneratedRegex(@"^\s*-\s*(([\w.:,;!?\(\)`""`/|\\'&%№*-–—+]+)(\s+[\w.:,;!?\(\)`""`/|\\'&%№*-–—+]+)*)")]
+        public static partial Regex PropertyMultiLinePart();
     }
 }

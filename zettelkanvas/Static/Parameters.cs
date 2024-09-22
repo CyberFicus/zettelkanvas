@@ -10,8 +10,10 @@ namespace Zettelkanvas.Static
         public static string TargetDirPath { get; private set; } = "";
         public static string OutputFilePath { get; private set; } = "";
         public static string FilePropertyBase { get; private set; } = "";
-        public static string RootNodeIndicator { get; private set; } = "!";
+        public static string RootNotePropertyName { get; private set; } = "root";
+        public static string InverseArrangementPropertyName { get; private set; } = "inverse_arrangement";
         public static int UpdatedNoteCouner { get; private set; } = 0;
+        
         public static void IncrementNoteCounter()
         {
             UpdatedNoteCouner++;
@@ -21,6 +23,9 @@ namespace Zettelkanvas.Static
         public static uint NodeHeight { get; private set; } = 400;
         public static uint NodeDistance { get; private set; } = 200;
         public static bool UseLongArrange { get; private set; } = false;
+        public static bool AllowInverseArrangement { get; private set; } = false;
+        public static bool ShrinkTrees { get; private set; } = false;
+        public static bool LinkAutoAlias { get; private set; } = false;
 
         public static EdgeArrowType DefaultArrow { get; private set; } = EdgeArrowType.Forward;
         public static EdgeArrowType TreeLinkArrow { get; private set; } = EdgeArrowType.TwoSided;
@@ -82,7 +87,12 @@ namespace Zettelkanvas.Static
                 Console.Error.WriteLine("Config file does not exist. Creating new config file");
                 try
                 {
-                    File.WriteAllLines(configFullPath, DefaultConfigText);
+                    using (StreamWriter writer = new(configFullPath))
+                    {
+                        writer.NewLine = "\n";
+                        foreach (string line in DefaultConfigText)
+                            writer.WriteLine(line);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -164,6 +174,18 @@ namespace Zettelkanvas.Static
                     if (value != 0)
                         UseLongArrange = true;
                     break;
+                case "allow_inverse_arrangement":
+                    if (value != 0)
+                        AllowInverseArrangement = true;
+                    break;
+                case "shrink_trees":
+                    if (value != 0)
+                        ShrinkTrees = true;
+                        break;
+                case "link_auto_alias":
+                    if (value != 0)
+                        LinkAutoAlias = true;
+                    break;
                 case "default_edge_arrow":
                     if (value > 3)
                     {
@@ -240,6 +262,9 @@ namespace Zettelkanvas.Static
                 "node_height : 400",
                 "node_distance : 200",
                 "use_long_arrangement : 0",
+                "allow_inverse_arrangement : 1",
+                "shrink_trees : 0",
+                "link_auto_alias : 0",
                 "// Arrows: 0 - none, 1 - forward, 2 - reverse, 3 - two-sided ",
                 "default_edge_arrow : 1",
                 "default_tree_link_arrow : 3",
