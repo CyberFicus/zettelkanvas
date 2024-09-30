@@ -128,13 +128,15 @@ namespace Zettelkanvas
 
             foreach (Node node in nodes)
                 canvas.Add("\t\t" + node.Print() + ",");
-            canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
+            if (nodes.Count > 0)
+                canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
 
             canvas.AddRange(["\t],", "\t\"edges\":["]);
 
             foreach (Edge edge in edges)
                 canvas.Add("\t\t" + edge.Print() + ",");
-            canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
+            if (edges.Count > 0)
+                canvas[canvas.Count-1] = canvas[canvas.Count-1][0..^1];
 
             canvas.AddRange(["\t]", "}"]);
 
@@ -162,7 +164,19 @@ namespace Zettelkanvas
             }
 
             List<Node> nodeList = GetNodesFromDir(Parameters.TargetDirPath, out Dictionary<string, Node> idToNode);
-            
+            if (nodeList.Count == 0) {
+                Console.Error.WriteLine("No suitable notes found");
+
+                List<string> emptyCanvas = BuildCanvas(nodeList, new List<Edge>());
+
+                using (StreamWriter writer = new(Parameters.OutputFilePath))
+                {
+                    writer.NewLine = "\n";
+                    foreach (string line in emptyCanvas)
+                        writer.WriteLine(line);
+                }
+                return;
+            }
             List<Node> rootNodes = BuildTrees(nodeList);
 
             ArrangeNodes(rootNodes);
